@@ -813,7 +813,7 @@ export function AgentDetail() {
             onChange={(icon) => updateIcon.mutate(icon)}
           >
             <button className="shrink-0 flex items-center justify-center h-12 w-12 rounded-lg bg-accent hover:bg-accent/80 transition-colors">
-              <AgentIcon icon={agent.icon} className="h-6 w-6" />
+              <AgentIcon icon={agent.icon} adapterType={agent.adapterType} className="h-6 w-6" />
             </button>
           </AgentIconPicker>
           <div className="min-w-0">

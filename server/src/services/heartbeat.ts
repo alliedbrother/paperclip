@@ -13,6 +13,7 @@ import {
   heartbeatRunEvents,
   heartbeatRuns,
   issues,
+  issueComments,
   projects,
   projectWorkspaces,
 } from "@paperclipai/db";
@@ -1870,6 +1871,25 @@ export function heartbeatService(db: Db) {
 
     const runtime = await ensureRuntimeState(agent);
     const context = parseObject(run.contextSnapshot);
+
+    // Fetch wake comment body so the agent sees it directly in the prompt
+    const wakeCommentIdForFetch = readNonEmptyString(context.wakeCommentId) ?? readNonEmptyString(context.commentId);
+    if (wakeCommentIdForFetch && !readNonEmptyString(context.wakeCommentBody)) {
+      try {
+        const comment = await db
+          .select({ body: issueComments.body, authorAgentId: issueComments.authorAgentId, authorUserId: issueComments.authorUserId })
+          .from(issueComments)
+          .where(eq(issueComments.id, wakeCommentIdForFetch))
+          .then((rows) => rows[0] ?? null);
+        if (comment?.body) {
+          context.wakeCommentBody = comment.body;
+          context.wakeCommentAuthorType = comment.authorUserId ? "user" : "agent";
+        }
+      } catch (err) {
+        logger.warn({ err, commentId: wakeCommentIdForFetch }, "Failed to fetch wake comment body");
+      }
+    }
+
     const taskKey = deriveTaskKey(context, null);
     const sessionCodec = getAdapterSessionCodec(agent.adapterType);
     const issueId = readNonEmptyString(context.issueId);

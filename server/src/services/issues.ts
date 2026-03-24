@@ -1458,14 +1458,24 @@ export function issueService(db: Db) {
       }),
 
     findMentionedAgents: async (companyId: string, body: string) => {
-      const re = /\B@([^\s@,!?.]+)/g;
-      const tokens = new Set<string>();
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(body)) !== null) tokens.add(m[1].toLowerCase());
-      if (tokens.size === 0) return [];
+      // Quick check: does the body contain '@' at all?
+      if (!body.includes("@")) return [];
       const rows = await db.select({ id: agents.id, name: agents.name })
         .from(agents).where(eq(agents.companyId, companyId));
-      return rows.filter(a => tokens.has(a.name.toLowerCase())).map(a => a.id);
+      const lower = body.toLowerCase();
+      // Match agent names that appear after '@' (handles multi-word names like "HR Coordinator")
+      return rows
+        .filter((a) => {
+          const nameLC = a.name.toLowerCase();
+          let idx = 0;
+          while ((idx = lower.indexOf("@" + nameLC, idx)) !== -1) {
+            // Ensure the @ is at the start or preceded by whitespace (not part of an email)
+            if (idx === 0 || /\s/.test(lower[idx - 1])) return true;
+            idx += 1;
+          }
+          return false;
+        })
+        .map((a) => a.id);
     },
 
     findMentionedProjectIds: async (issueId: string) => {

@@ -41,6 +41,7 @@ import {
   Hexagon,
   Pentagon,
   Fingerprint,
+  User,
   type LucideIcon,
 } from "lucide-react";
 import { AGENT_ICON_NAMES, type AgentIconName } from "@paperclipai/shared";
@@ -108,9 +109,13 @@ export function getAgentIcon(iconName: string | null | undefined): LucideIcon {
 interface AgentIconProps {
   icon: string | null | undefined;
   className?: string;
+  adapterType?: string | null;
 }
 
-export function AgentIcon({ icon, className }: AgentIconProps) {
+export function AgentIcon({ icon, className, adapterType }: AgentIconProps) {
+  if (adapterType === "human") {
+    return <User className={className} />;
+  }
   const Icon = getAgentIcon(icon);
   return <Icon className={className} />;
 }

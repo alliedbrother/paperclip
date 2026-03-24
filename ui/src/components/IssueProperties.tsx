@@ -497,7 +497,7 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
             )}
             onClick={() => { trackRecentAssignee(a.id); onUpdate({ assigneeAgentId: a.id, assigneeUserId: null }); setAssigneeOpen(false); }}
           >
-            <AgentIcon icon={a.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
+            <AgentIcon icon={a.icon} adapterType={a.adapterType} className="shrink-0 h-3 w-3 text-muted-foreground" />
             {a.name}
           </button>
         ))}

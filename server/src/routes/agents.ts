@@ -625,6 +625,7 @@ export function agentRoutes(db: Db) {
       name: String(node.name),
       role: String(node.role),
       status: String(node.status),
+      adapterType: String(node.adapterType ?? ""),
       reports,
     };
   }

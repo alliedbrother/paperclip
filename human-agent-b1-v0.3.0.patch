@@ -1,0 +1,525 @@
+From f62ff329d1ca16b1225c8bc388a754d1a3c6db59 Mon Sep 17 00:00:00 2001
+From: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+Date: Wed, 11 Mar 2026 04:06:02 +0000
+Subject: [PATCH 1/2] =?UTF-8?q?feat:=20implement=20Model=20B1=20=E2=80=94?=
+ =?UTF-8?q?=20human=20proxy=20agents=20in=20org=20chart=20(v0.3.0=20base)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Add 'human' adapter type to AGENT_ADAPTER_TYPES constant
+- Add linkedUserId column to agents schema with Drizzle migration
+- Create noop human server adapter (execute returns immediately)
+- Register human adapter in server and UI adapter registries
+- Create human UI adapter module (config fields, build-config, parse-stdout)
+- Add 'Human' to adapter labels in agent-config-primitives
+- Add 'Human' option to NewAgentDialog advanced adapter picker
+- Update NewAgent page to disable heartbeat for human agents
+- Update OrgChart to render human agents with User icon and blue accent
+- Update Org tree to show User icon for human agents
+- Add adapterType to OrgNode interface for adapter-aware rendering
+
+Co-Authored-By: vijay <amnigos@gmail.com>
+---
+ .../0026_human_agent_linked_user.sql          |  1 +
+ packages/db/src/migrations/meta/_journal.json |  9 +++-
+ packages/db/src/schema/agents.ts              |  1 +
+ packages/shared/src/constants.ts              |  1 +
+ packages/shared/src/types/agent.ts            |  1 +
+ packages/shared/src/validators/agent.ts       |  1 +
+ server/src/adapters/human/index.ts            | 50 +++++++++++++++++++
+ server/src/adapters/registry.ts               |  2 +
+ ui/src/adapters/human/build-config.ts         |  6 +++
+ ui/src/adapters/human/config-fields.tsx       | 14 ++++++
+ ui/src/adapters/human/index.ts                | 12 +++++
+ ui/src/adapters/human/parse-stdout.ts         |  6 +++
+ ui/src/adapters/registry.ts                   |  2 +
+ ui/src/api/agents.ts                          |  1 +
+ ui/src/components/NewAgentDialog.tsx          |  9 +++-
+ ui/src/components/agent-config-primitives.tsx |  1 +
+ ui/src/pages/NewAgent.tsx                     | 10 ++--
+ ui/src/pages/Org.tsx                          | 34 +++++++------
+ ui/src/pages/OrgChart.tsx                     | 11 ++--
+ 19 files changed, 148 insertions(+), 24 deletions(-)
+ create mode 100644 packages/db/src/migrations/0026_human_agent_linked_user.sql
+ create mode 100644 server/src/adapters/human/index.ts
+ create mode 100644 ui/src/adapters/human/build-config.ts
+ create mode 100644 ui/src/adapters/human/config-fields.tsx
+ create mode 100644 ui/src/adapters/human/index.ts
+ create mode 100644 ui/src/adapters/human/parse-stdout.ts
+
+diff --git a/packages/db/src/migrations/0026_human_agent_linked_user.sql b/packages/db/src/migrations/0026_human_agent_linked_user.sql
+new file mode 100644
+index 0000000..18735c2
+--- /dev/null
++++ b/packages/db/src/migrations/0026_human_agent_linked_user.sql
+@@ -0,0 +1 @@
++ALTER TABLE "agents" ADD COLUMN "linked_user_id" text;
+diff --git a/packages/db/src/migrations/meta/_journal.json b/packages/db/src/migrations/meta/_journal.json
+index c3e2505..2459c32 100644
+--- a/packages/db/src/migrations/meta/_journal.json
++++ b/packages/db/src/migrations/meta/_journal.json
+@@ -183,6 +183,13 @@
+       "when": 1772807461603,
+       "tag": "0025_nasty_salo",
+       "breakpoints": true
++    },
++    {
++      "idx": 26,
++      "version": "7",
++      "when": 1773466800000,
++      "tag": "0026_human_agent_linked_user",
++      "breakpoints": true
+     }
+   ]
+-}
+\ No newline at end of file
++}
+diff --git a/packages/db/src/schema/agents.ts b/packages/db/src/schema/agents.ts
+index cf0635c..ea9fecd 100644
+--- a/packages/db/src/schema/agents.ts
++++ b/packages/db/src/schema/agents.ts
+@@ -30,6 +30,7 @@ export const agents = pgTable(
+     permissions: jsonb("permissions").$type<Record<string, unknown>>().notNull().default({}),
+     lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
+     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
++    linkedUserId: text("linked_user_id"),
+     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+   },
+diff --git a/packages/shared/src/constants.ts b/packages/shared/src/constants.ts
+index ba75dc8..701ce05 100644
+--- a/packages/shared/src/constants.ts
++++ b/packages/shared/src/constants.ts
+@@ -30,6 +30,7 @@ export const AGENT_ADAPTER_TYPES = [
+   "pi_local",
+   "cursor",
+   "openclaw_gateway",
++  "human",
+ ] as const;
+ export type AgentAdapterType = (typeof AGENT_ADAPTER_TYPES)[number];
+ 
+diff --git a/packages/shared/src/types/agent.ts b/packages/shared/src/types/agent.ts
+index 04a64a6..7fda801 100644
+--- a/packages/shared/src/types/agent.ts
++++ b/packages/shared/src/types/agent.ts
+@@ -27,6 +27,7 @@ export interface Agent {
+   permissions: AgentPermissions;
+   lastHeartbeatAt: Date | null;
+   metadata: Record<string, unknown> | null;
++  linkedUserId: string | null;
+   createdAt: Date;
+   updatedAt: Date;
+ }
+diff --git a/packages/shared/src/validators/agent.ts b/packages/shared/src/validators/agent.ts
+index 8a0450c..eef7df0 100644
+--- a/packages/shared/src/validators/agent.ts
++++ b/packages/shared/src/validators/agent.ts
+@@ -37,6 +37,7 @@ export const createAgentSchema = z.object({
+   budgetMonthlyCents: z.number().int().nonnegative().optional().default(0),
+   permissions: agentPermissionsSchema.optional(),
+   metadata: z.record(z.unknown()).optional().nullable(),
++  linkedUserId: z.string().optional().nullable(),
+ });
+ 
+ export type CreateAgent = z.infer<typeof createAgentSchema>;
+diff --git a/server/src/adapters/human/index.ts b/server/src/adapters/human/index.ts
+new file mode 100644
+index 0000000..91a5bc9
+--- /dev/null
++++ b/server/src/adapters/human/index.ts
+@@ -0,0 +1,50 @@
++import type { ServerAdapterModule } from "../types.js";
++
++/**
++ * Human adapter — a noop adapter for human proxy agents.
++ *
++ * Human agents appear in the org chart and can be managers / assignees,
++ * but they never execute heartbeat runs.  The heartbeat scheduler already
++ * skips agents whose heartbeat policy is disabled, so this adapter's
++ * `execute` should never be called in practice.  If it is, it returns
++ * immediately with a noop result.
++ */
++export const humanAdapter: ServerAdapterModule = {
++  type: "human",
++
++  async execute() {
++    return {
++      exitCode: 0,
++      signal: null,
++      timedOut: false,
++    };
++  },
++
++  async testEnvironment() {
++    return {
++      adapterType: "human",
++      status: "pass" as const,
++      checks: [
++        {
++          code: "human.noop",
++          level: "info" as const,
++          message: "Human agents do not require an execution environment.",
++        },
++      ],
++      testedAt: new Date().toISOString(),
++    };
++  },
++
++  models: [],
++  supportsLocalAgentJwt: false,
++  agentConfigurationDoc: `# human agent configuration
++
++Adapter: human
++
++Human agents represent real people in the org chart.
++They do not execute heartbeat runs — they participate as
++managers, issue assignees, and goal owners through the UI.
++
++No adapter configuration is needed.
++`,
++};
+diff --git a/server/src/adapters/registry.ts b/server/src/adapters/registry.ts
+index 9fe536a..2d5a91d 100644
+--- a/server/src/adapters/registry.ts
++++ b/server/src/adapters/registry.ts
+@@ -47,6 +47,7 @@ import {
+ } from "@paperclipai/adapter-pi-local";
+ import { processAdapter } from "./process/index.js";
+ import { httpAdapter } from "./http/index.js";
++import { humanAdapter } from "./human/index.js";
+ 
+ const claudeLocalAdapter: ServerAdapterModule = {
+   type: "claude_local",
+@@ -121,6 +122,7 @@ const adaptersByType = new Map<string, ServerAdapterModule>(
+     openclawGatewayAdapter,
+     processAdapter,
+     httpAdapter,
++    humanAdapter,
+   ].map((a) => [a.type, a]),
+ );
+ 
+diff --git a/ui/src/adapters/human/build-config.ts b/ui/src/adapters/human/build-config.ts
+new file mode 100644
+index 0000000..6710ebe
+--- /dev/null
++++ b/ui/src/adapters/human/build-config.ts
+@@ -0,0 +1,6 @@
++import type { CreateConfigValues } from "../types";
++
++/** Human agents need no adapter config. */
++export function buildHumanConfig(_v: CreateConfigValues): Record<string, unknown> {
++  return {};
++}
+diff --git a/ui/src/adapters/human/config-fields.tsx b/ui/src/adapters/human/config-fields.tsx
+new file mode 100644
+index 0000000..26dc083
+--- /dev/null
++++ b/ui/src/adapters/human/config-fields.tsx
+@@ -0,0 +1,14 @@
++import type { AdapterConfigFieldsProps } from "../types";
++
++/**
++ * Human agents have no adapter configuration — they don't execute runs.
++ * Show an informational message instead of config fields.
++ */
++export function HumanConfigFields(_props: AdapterConfigFieldsProps) {
++  return (
++    <p className="text-xs text-muted-foreground italic">
++      Human agents represent real people in the org chart.
++      No adapter configuration is needed.
++    </p>
++  );
++}
+diff --git a/ui/src/adapters/human/index.ts b/ui/src/adapters/human/index.ts
+new file mode 100644
+index 0000000..9f8ec40
+--- /dev/null
++++ b/ui/src/adapters/human/index.ts
+@@ -0,0 +1,12 @@
++import type { UIAdapterModule } from "../types";
++import { parseHumanStdoutLine } from "./parse-stdout";
++import { HumanConfigFields } from "./config-fields";
++import { buildHumanConfig } from "./build-config";
++
++export const humanUIAdapter: UIAdapterModule = {
++  type: "human",
++  label: "Human",
++  parseStdoutLine: parseHumanStdoutLine,
++  ConfigFields: HumanConfigFields,
++  buildAdapterConfig: buildHumanConfig,
++};
+diff --git a/ui/src/adapters/human/parse-stdout.ts b/ui/src/adapters/human/parse-stdout.ts
+new file mode 100644
+index 0000000..2cf1b35
+--- /dev/null
++++ b/ui/src/adapters/human/parse-stdout.ts
+@@ -0,0 +1,6 @@
++import type { TranscriptEntry } from "../types";
++
++/** Human agents don't produce stdout — pass through as plain text. */
++export function parseHumanStdoutLine(line: string, ts: string): TranscriptEntry[] {
++  return [{ kind: "stdout", ts, text: line }];
++}
+diff --git a/ui/src/adapters/registry.ts b/ui/src/adapters/registry.ts
+index 1a36af6..471c78a 100644
+--- a/ui/src/adapters/registry.ts
++++ b/ui/src/adapters/registry.ts
+@@ -7,6 +7,7 @@ import { piLocalUIAdapter } from "./pi-local";
+ import { openClawGatewayUIAdapter } from "./openclaw-gateway";
+ import { processUIAdapter } from "./process";
+ import { httpUIAdapter } from "./http";
++import { humanUIAdapter } from "./human";
+ 
+ const adaptersByType = new Map<string, UIAdapterModule>(
+   [
+@@ -18,6 +19,7 @@ const adaptersByType = new Map<string, UIAdapterModule>(
+     openClawGatewayUIAdapter,
+     processUIAdapter,
+     httpUIAdapter,
++    humanUIAdapter,
+   ].map((a) => [a.type, a]),
+ );
+ 
+diff --git a/ui/src/api/agents.ts b/ui/src/api/agents.ts
+index 85486af..9f29eef 100644
+--- a/ui/src/api/agents.ts
++++ b/ui/src/api/agents.ts
+@@ -37,6 +37,7 @@ export interface OrgNode {
+   name: string;
+   role: string;
+   status: string;
++  adapterType?: string;
+   reports: OrgNode[];
+ }
+ 
+diff --git a/ui/src/components/NewAgentDialog.tsx b/ui/src/components/NewAgentDialog.tsx
+index 1883079..a8f8bef 100644
+--- a/ui/src/components/NewAgentDialog.tsx
++++ b/ui/src/components/NewAgentDialog.tsx
+@@ -27,7 +27,8 @@ type AdvancedAdapterType =
+   | "opencode_local"
+   | "pi_local"
+   | "cursor"
+-  | "openclaw_gateway";
++  | "openclaw_gateway"
++  | "human";
+ 
+ const ADVANCED_ADAPTER_OPTIONS: Array<{
+   value: AdvancedAdapterType;
+@@ -74,6 +75,12 @@ const ADVANCED_ADAPTER_OPTIONS: Array<{
+     icon: Bot,
+     desc: "Invoke OpenClaw via gateway protocol",
+   },
++  {
++    value: "human",
++    label: "Human",
++    icon: Bot,
++    desc: "Human proxy agent for org chart",
++  },
+ ];
+ 
+ export function NewAgentDialog() {
+diff --git a/ui/src/components/agent-config-primitives.tsx b/ui/src/components/agent-config-primitives.tsx
+index 8e5c705..938eb9b 100644
+--- a/ui/src/components/agent-config-primitives.tsx
++++ b/ui/src/components/agent-config-primitives.tsx
+@@ -58,6 +58,7 @@ export const adapterLabels: Record<string, string> = {
+   cursor: "Cursor (local)",
+   process: "Process",
+   http: "HTTP",
++  human: "Human",
+ };
+ 
+ export const roleLabels = AGENT_ROLE_LABELS as Record<string, string>;
+diff --git a/ui/src/pages/NewAgent.tsx b/ui/src/pages/NewAgent.tsx
+index b28d971..9b59fa6 100644
+--- a/ui/src/pages/NewAgent.tsx
++++ b/ui/src/pages/NewAgent.tsx
+@@ -32,6 +32,7 @@ const SUPPORTED_ADVANCED_ADAPTER_TYPES = new Set<CreateConfigValues["adapterType
+   "pi_local",
+   "cursor",
+   "openclaw_gateway",
++  "human",
+ ]);
+ 
+ function createValuesForAdapterType(
+@@ -165,6 +166,7 @@ export function NewAgent() {
+         return;
+       }
+     }
++    const isHuman = configValues.adapterType === "human";
+     createAgent.mutate({
+       name: name.trim(),
+       role: effectiveRole,
+@@ -174,11 +176,11 @@ export function NewAgent() {
+       adapterConfig: buildAdapterConfig(),
+       runtimeConfig: {
+         heartbeat: {
+-          enabled: configValues.heartbeatEnabled,
+-          intervalSec: configValues.intervalSec,
+-          wakeOnDemand: true,
++          enabled: isHuman ? false : configValues.heartbeatEnabled,
++          intervalSec: isHuman ? 0 : configValues.intervalSec,
++          wakeOnDemand: !isHuman,
+           cooldownSec: 10,
+-          maxConcurrentRuns: 1,
++          maxConcurrentRuns: isHuman ? 0 : 1,
+         },
+       },
+       budgetMonthlyCents: 0,
+diff --git a/ui/src/pages/Org.tsx b/ui/src/pages/Org.tsx
+index 2cbc181..51dcab1 100644
+--- a/ui/src/pages/Org.tsx
++++ b/ui/src/pages/Org.tsx
+@@ -8,7 +8,7 @@ import { queryKeys } from "../lib/queryKeys";
+ import { StatusBadge } from "../components/StatusBadge";
+ import { EmptyState } from "../components/EmptyState";
+ import { PageSkeleton } from "../components/PageSkeleton";
+-import { ChevronRight, GitBranch } from "lucide-react";
++import { ChevronRight, GitBranch, User } from "lucide-react";
+ import { cn } from "../lib/utils";
+ 
+ function OrgTree({
+@@ -64,20 +64,24 @@ function OrgTreeNode({
+         ) : (
+           <span className="w-4" />
+         )}
+-        <span
+-          className={cn(
+-            "h-2 w-2 rounded-full shrink-0",
+-            node.status === "active"
+-              ? "bg-green-400"
+-              : node.status === "paused"
+-                ? "bg-yellow-400"
+-                : node.status === "pending_approval"
+-                  ? "bg-amber-400"
+-                : node.status === "error"
+-                  ? "bg-red-400"
+-                  : "bg-neutral-400"
+-          )}
+-        />
++        {node.adapterType === "human" ? (
++          <User className="h-3.5 w-3.5 shrink-0 text-blue-500" />
++        ) : (
++          <span
++            className={cn(
++              "h-2 w-2 rounded-full shrink-0",
++              node.status === "active"
++                ? "bg-green-400"
++                : node.status === "paused"
++                  ? "bg-yellow-400"
++                  : node.status === "pending_approval"
++                    ? "bg-amber-400"
++                  : node.status === "error"
++                    ? "bg-red-400"
++                    : "bg-neutral-400"
++            )}
++          />
++        )}
+         <span className="font-medium flex-1">{node.name}</span>
+         <span className="text-xs text-muted-foreground">{node.role}</span>
+         <StatusBadge status={node.status} />
+diff --git a/ui/src/pages/OrgChart.tsx b/ui/src/pages/OrgChart.tsx
+index 89b4d58..5e38811 100644
+--- a/ui/src/pages/OrgChart.tsx
++++ b/ui/src/pages/OrgChart.tsx
+@@ -9,7 +9,7 @@ import { agentUrl } from "../lib/utils";
+ import { EmptyState } from "../components/EmptyState";
+ import { PageSkeleton } from "../components/PageSkeleton";
+ import { AgentIcon } from "../components/AgentIconPicker";
+-import { Network } from "lucide-react";
++import { Network, User } from "lucide-react";
+ import { AGENT_ROLE_LABELS, type Agent } from "@paperclipai/shared";
+ 
+ // Layout constants
+@@ -123,6 +123,7 @@ const adapterLabels: Record<string, string> = {
+   openclaw_gateway: "OpenClaw Gateway",
+   process: "Process",
+   http: "HTTP",
++  human: "Human",
+ };
+ 
+ const statusDotColor: Record<string, string> = {
+@@ -390,8 +391,12 @@ export function OrgChart() {
+               <div className="flex items-center px-4 py-3 gap-3">
+                 {/* Agent icon + status dot */}
+                 <div className="relative shrink-0">
+-                  <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
+-                    <AgentIcon icon={agent?.icon} className="h-4.5 w-4.5 text-foreground/70" />
++                  <div className={`w-9 h-9 rounded-full flex items-center justify-center ${agent?.adapterType === "human" ? "bg-blue-100 dark:bg-blue-900/30" : "bg-muted"}`}>
++                    {agent?.adapterType === "human" ? (
++                      <User className="h-4.5 w-4.5 text-blue-600 dark:text-blue-400" />
++                    ) : (
++                      <AgentIcon icon={agent?.icon} className="h-4.5 w-4.5 text-foreground/70" />
++                    )}
+                   </div>
+                   <span
+                     className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card"
+-- 
+2.34.1
+
+
+From c22fe3d0ff591b23ace1048a165111d76a976173 Mon Sep 17 00:00:00 2001
+From: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+Date: Wed, 11 Mar 2026 19:03:25 +0000
+Subject: [PATCH 2/2] fix: include adapterType in org tree response, use User
+ icon for human adapter picker, add portability comment
+
+Co-Authored-By: vijay <amnigos@gmail.com>
+---
+ server/src/routes/agents.ts                | 1 +
+ server/src/services/company-portability.ts | 3 +++
+ ui/src/components/NewAgentDialog.tsx       | 3 ++-
+ 3 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/server/src/routes/agents.ts b/server/src/routes/agents.ts
+index d150bb1..bbb6f5d 100644
+--- a/server/src/routes/agents.ts
++++ b/server/src/routes/agents.ts
+@@ -378,6 +378,7 @@ export function agentRoutes(db: Db) {
+       name: String(node.name),
+       role: String(node.role),
+       status: String(node.status),
++      adapterType: String(node.adapterType ?? ""),
+       reports,
+     };
+   }
+diff --git a/server/src/services/company-portability.ts b/server/src/services/company-portability.ts
+index ac6de36..17efea4 100644
+--- a/server/src/services/company-portability.ts
++++ b/server/src/services/company-portability.ts
+@@ -659,6 +659,9 @@ export function companyPortabilityService(db: Db) {
+           instructions.body,
+         );
+ 
++        // NOTE: linkedUserId is intentionally omitted — it references a local
++        // auth user that would not exist on the target instance.  Human proxy
++        // agents are imported without a user link and must be re-linked manually.
+         manifest.agents.push({
+           slug,
+           name: agent.name,
+diff --git a/ui/src/components/NewAgentDialog.tsx b/ui/src/components/NewAgentDialog.tsx
+index a8f8bef..a8ac342 100644
+--- a/ui/src/components/NewAgentDialog.tsx
++++ b/ui/src/components/NewAgentDialog.tsx
+@@ -17,6 +17,7 @@ import {
+   MousePointer2,
+   Sparkles,
+   Terminal,
++  User,
+ } from "lucide-react";
+ import { cn } from "@/lib/utils";
+ import { OpenCodeLogoIcon } from "./OpenCodeLogoIcon";
+@@ -78,7 +79,7 @@ const ADVANCED_ADAPTER_OPTIONS: Array<{
+   {
+     value: "human",
+     label: "Human",
+-    icon: Bot,
++    icon: User,
+     desc: "Human proxy agent for org chart",
+   },
+ ];
+-- 
+2.34.1
+

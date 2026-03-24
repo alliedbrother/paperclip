@@ -2366,6 +2366,9 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           }
         }
 
+        // NOTE: linkedUserId is intentionally omitted — it references a local
+        // auth user that would not exist on the target instance.  Human proxy
+        // agents are imported without a user link and must be re-linked manually.
         const extension = stripEmptyValues({
           role: agent.role !== "agent" ? agent.role : undefined,
           icon: agent.icon ?? null,

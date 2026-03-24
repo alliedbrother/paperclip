@@ -1388,6 +1388,23 @@ export function issueRoutes(db: Db, storage: StorageService) {
         logger.warn({ err, issueId: id }, "failed to resolve @-mentions");
       }
 
+      // When a user @mentions an agent, reassign the issue to the first mentioned
+      // agent so it takes ownership directly (instead of the old assignee waking up
+      // and delegating).
+      if (mentionedIds.length > 0 && actor.actorType === "user") {
+        const newAssigneeId = mentionedIds[0];
+        if (newAssigneeId !== currentIssue.assigneeAgentId) {
+          try {
+            await svc.update(id, { assigneeAgentId: newAssigneeId });
+            // Remove old assignee wakeup since issue is now reassigned
+            if (assigneeId) wakeups.delete(assigneeId);
+            logger.info({ issueId: id, newAssigneeId, oldAssigneeId: assigneeId }, "reassigned issue via @mention");
+          } catch (err) {
+            logger.warn({ err, issueId: id, newAssigneeId }, "failed to reassign issue via @mention");
+          }
+        }
+      }
+
       for (const mentionedId of mentionedIds) {
         if (wakeups.has(mentionedId)) continue;
         if (actorIsAgent && actor.actorId === mentionedId) continue;
