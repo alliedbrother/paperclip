@@ -30,7 +30,9 @@ function getVerticalBudgetConfig(agent: { runtimeConfig: unknown }): VerticalBud
   };
 }
 
-export function verticalBudgetService(db: Db) {
+type WakeupFn = (agentId: string, opts?: Record<string, unknown>) => Promise<unknown>;
+
+export function verticalBudgetService(db: Db, wakeup?: WakeupFn) {
 
   async function getById(id: string) {
     return db
@@ -154,6 +156,16 @@ export function verticalBudgetService(db: Db) {
     });
   }
 
+  async function wakeAssignee(issue: { id: string; assigneeAgentId: string | null }) {
+    if (!wakeup || !issue.assigneeAgentId) return;
+    void wakeup(issue.assigneeAgentId, {
+      source: "assignment",
+      triggerDetail: "system",
+      reason: "issue_assigned",
+      payload: { issueId: issue.id, mutation: "create" },
+    }).catch(err => logger.warn({ err, agentId: issue.assigneeAgentId }, "budget reload: failed to wake assignee"));
+  }
+
   async function hasOpenReloadIssue(companyId: string, agentName: string): Promise<boolean> {
     const title = `Budget reload: ${agentName}`;
     const existing = await db
@@ -225,6 +237,7 @@ export function verticalBudgetService(db: Db) {
         assigneeAgentId: assignee.id,
       });
 
+      await wakeAssignee(issue);
       logger.info(
         { agentId: exhaustedAgentId, escalatedTo: assignee.name, issueId: issue.id },
         "budget reload: no vertical — escalated to human in chain",
@@ -270,6 +283,7 @@ export function verticalBudgetService(db: Db) {
         assigneeAgentId: vpFinance.id,
       });
 
+      await wakeAssignee(issue);
       logger.info(
         { agentId: exhaustedAgentId, vpFinanceId: vpFinance.id, reloadAmount, issueId: issue.id },
         "budget reload: issue created for VP Finance",
@@ -295,6 +309,7 @@ export function verticalBudgetService(db: Db) {
         assigneeAgentId: human ? human.id : vpFinance.id,
       });
 
+      await wakeAssignee(issue);
       const assignee = human ?? vpFinance;
       logger.info(
         { agentId: exhaustedAgentId, escalatedTo: assignee.name, issueId: issue.id },

@@ -1552,7 +1552,7 @@ export function heartbeatService(db: Db) {
     if (budgetBlock) {
       if (budgetBlock.scopeType === "agent") {
         const { verticalBudgetService } = await import("./vertical-budget.js");
-        void verticalBudgetService(db).requestBudgetReload(run.agentId)
+        void verticalBudgetService(db, enqueueWakeup).requestBudgetReload(run.agentId)
           .catch(err => logger.warn({ err, agentId: run.agentId }, "auto budget reload request failed on run cancel"));
       }
       await cancelRunInternal(run.id, budgetBlock.reason);
@@ -2925,7 +2925,7 @@ export function heartbeatService(db: Db) {
       // Auto-request budget reload when agent is blocked by budget hard-stop
       if (budgetBlock.scopeType === "agent") {
         const { verticalBudgetService } = await import("./vertical-budget.js");
-        void verticalBudgetService(db).requestBudgetReload(agentId)
+        void verticalBudgetService(db, enqueueWakeup).requestBudgetReload(agentId)
           .catch(err => logger.warn({ err, agentId }, "auto budget reload request failed on hard-stop block"));
       }
       throw conflict(budgetBlock.reason, {
