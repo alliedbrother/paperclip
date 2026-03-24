@@ -200,8 +200,36 @@ export function verticalBudgetService(db: Db) {
 
     const vp = await getVerticalHead(exhaustedAgentId);
     if (!vp) {
-      logger.warn({ agentId: exhaustedAgentId }, "budget reload: no VP found in chain, leaving paused");
-      return { action: "error", reason: "No VP found in reporting chain" };
+      // No vertical head — escalate directly to human in chain (e.g. CEO)
+      const human = await findHumanInChain(exhaustedAgentId);
+      const vpFinance = await findVpFinance(agent.companyId);
+      const assignee = human ?? vpFinance;
+      if (!assignee) {
+        logger.warn({ agentId: exhaustedAgentId }, "budget reload: no VP, no human, no VP Finance found");
+        return { action: "error", reason: "No VP, human, or VP Finance found in reporting chain" };
+      }
+
+      const title = `Budget reload: ${agent.name}`;
+      const description = [
+        `Agent ${agent.name} (id: ${agent.id}) exhausted budget.`,
+        `Spent: $${(agent.spentMonthlyCents / 100).toFixed(2)}, Budget: $${(agent.budgetMonthlyCents / 100).toFixed(2)}`,
+        ``,
+        `This agent is not part of a vertical budget pool. A human must decide whether to increase the budget.`,
+        `Assigned to: ${assignee.name}`,
+      ].join("\n");
+
+      const issue = await createIssueWithCounter(agent.companyId, {
+        title,
+        description,
+        status: "todo",
+        assigneeAgentId: assignee.id,
+      });
+
+      logger.info(
+        { agentId: exhaustedAgentId, escalatedTo: assignee.name, issueId: issue.id },
+        "budget reload: no vertical — escalated to human in chain",
+      );
+      return { action: "escalated_to_human", issueId: issue.id, issueIdentifier: issue.identifier ?? "", assignedTo: assignee.name, reason: "no_vertical_head" };
     }
 
     const budget = await computeVerticalBudget(vp.id);
