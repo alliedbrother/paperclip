@@ -1,6 +1,6 @@
 import { and, eq, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, companies, issues } from "@paperclipai/db";
+import { agents, budgetPolicies, companies, issues } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 
 interface VerticalBudgetConfig {
@@ -317,6 +317,18 @@ export function verticalBudgetService(db: Db) {
         updatedAt: new Date(),
       })
       .where(eq(agents.id, agentId));
+
+    // Also update the upstream budget_policies table to match
+    await db
+      .update(budgetPolicies)
+      .set({ amount: newBudget, updatedAt: new Date() })
+      .where(
+        and(
+          eq(budgetPolicies.scopeType, "agent"),
+          eq(budgetPolicies.scopeId, agentId),
+          eq(budgetPolicies.isActive, true),
+        ),
+      );
 
     logger.info(
       { agentId, oldBudget: agent.budgetMonthlyCents, newBudget, additionalCents },
