@@ -21,10 +21,10 @@ export function BreadcrumbProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (breadcrumbs.length === 0) {
-      document.title = "Atomic AGI";
+      document.title = "AtomClaw";
     } else {
       const parts = [...breadcrumbs].reverse().map((b) => b.label);
-      document.title = `${parts.join(" · ")} · Atomic AGI`;
+      document.title = `${parts.join(" · ")} · AtomClaw`;
     }
   }, [breadcrumbs]);
 

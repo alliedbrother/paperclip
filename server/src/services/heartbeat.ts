@@ -507,7 +507,7 @@ export function shouldResetTaskSessionForWake(
 export function formatRuntimeWorkspaceWarningLog(warning: string) {
   return {
     stream: "stdout" as const,
-    chunk: `[paperclip] ${warning}\n`,
+    chunk: `[atomclaw] ${warning}\n`,
   };
 }
 
@@ -2385,7 +2385,7 @@ export function heartbeatService(db: Db) {
         } catch (err) {
           await onLog(
             "stderr",
-            `[paperclip] Failed to post workspace-ready comment: ${err instanceof Error ? err.message : String(err)}\n`,
+            `[atomclaw] Failed to post workspace-ready comment: ${err instanceof Error ? err.message : String(err)}\n`,
           );
         }
       }
@@ -2475,7 +2475,7 @@ export function heartbeatService(db: Db) {
           } catch (err) {
             await onLog(
               "stderr",
-              `[paperclip] Failed to post adapter-managed runtime comment: ${err instanceof Error ? err.message : String(err)}\n`,
+              `[atomclaw] Failed to post adapter-managed runtime comment: ${err instanceof Error ? err.message : String(err)}\n`,
             );
           }
         }

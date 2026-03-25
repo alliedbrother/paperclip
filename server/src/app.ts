@@ -247,7 +247,7 @@ export async function createApp(
         res.status(200).set("Content-Type", "text/html").end(indexHtml);
       });
     } else {
-      console.warn("[paperclip] UI dist not found; running in API-only mode");
+      console.warn("[atomclaw] UI dist not found; running in API-only mode");
     }
   }
 
