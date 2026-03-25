@@ -1554,6 +1554,13 @@ export function heartbeatService(db: Db) {
         const { verticalBudgetService } = await import("./vertical-budget.js");
         void verticalBudgetService(db, enqueueWakeup).requestBudgetReload(run.agentId)
           .catch(err => logger.warn({ err, agentId: run.agentId }, "auto budget reload request failed on run cancel"));
+        const blockIssueId = readNonEmptyString(context.issueId);
+        if (blockIssueId) {
+          void issuesSvc.addComment(blockIssueId,
+            "⚠️ **Budget Exhausted** — I cannot work on this issue because my monthly token budget has been exceeded. A reload request has been submitted to VP Finance. I will resume work once my budget is replenished.",
+            { agentId: run.agentId },
+          ).catch(err => logger.warn({ err, agentId: run.agentId, issueId: blockIssueId }, "failed to post budget-block comment on run cancel"));
+        }
       }
       await cancelRunInternal(run.id, budgetBlock.reason);
       return null;
@@ -2927,6 +2934,12 @@ export function heartbeatService(db: Db) {
         const { verticalBudgetService } = await import("./vertical-budget.js");
         void verticalBudgetService(db, enqueueWakeup).requestBudgetReload(agentId)
           .catch(err => logger.warn({ err, agentId }, "auto budget reload request failed on hard-stop block"));
+        if (issueId) {
+          void issuesSvc.addComment(issueId,
+            "⚠️ **Budget Exhausted** — I cannot work on this issue because my monthly token budget has been exceeded. A reload request has been submitted to VP Finance. I will resume work once my budget is replenished.",
+            { agentId },
+          ).catch(err => logger.warn({ err, agentId, issueId }, "failed to post budget-block comment"));
+        }
       }
       throw conflict(budgetBlock.reason, {
         scopeType: budgetBlock.scopeType,
