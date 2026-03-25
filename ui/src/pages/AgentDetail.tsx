@@ -666,6 +666,8 @@ export function AgentDetail() {
                 ? "budget"
               : activeView === "issues"
                 ? "issues"
+              : agent?.adapterType === "human"
+                ? "issues"
               : "dashboard";
     if (routeAgentRef !== canonicalAgentRef || urlTab !== canonicalTab) {
       navigate(`/agents/${canonicalAgentRef}/${canonicalTab}`, { replace: true });
