@@ -2898,6 +2898,11 @@ export function heartbeatService(db: Db) {
     const agent = await getAgent(agentId);
     if (!agent) throw notFound("Agent not found");
 
+    // Human agents don't execute heartbeats — skip silently
+    if (agent.adapterType === "human") {
+      return null;
+    }
+
     const writeSkippedRequest = async (skipReason: string) => {
       await db.insert(agentWakeupRequests).values({
         companyId: agent.companyId,

@@ -69,10 +69,22 @@ import {
   ChevronDown,
   ArrowLeft,
   HelpCircle,
+  User,
+  MessageSquare,
+  ExternalLink,
+  DollarSign,
 } from "lucide-react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { AgentIcon, AgentIconPicker } from "../components/AgentIconPicker";
 import { RunTranscriptView, type TranscriptMode } from "../components/transcript/RunTranscriptView";
 import {
@@ -221,7 +233,7 @@ function scrollToContainerBottom(container: ScrollContainer, behavior: ScrollBeh
   container.scrollTo({ top: container.scrollHeight, behavior });
 }
 
-type AgentDetailView = "dashboard" | "instructions" | "configuration" | "skills" | "runs" | "budget";
+type AgentDetailView = "dashboard" | "instructions" | "configuration" | "skills" | "runs" | "budget" | "issues";
 
 function parseAgentDetailView(value: string | null): AgentDetailView {
   if (value === "instructions" || value === "prompts") return "instructions";
@@ -229,6 +241,7 @@ function parseAgentDetailView(value: string | null): AgentDetailView {
   if (value === "skills") return "skills";
   if (value === "budget") return "budget";
   if (value === "runs") return value;
+  if (value === "issues") return "issues";
   return "dashboard";
 }
 
@@ -798,7 +811,8 @@ export function AgentDetail() {
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!agent) return null;
   if (!urlRunId && !urlTab) {
-    return <Navigate to={`/agents/${canonicalAgentRef}/dashboard`} replace />;
+    const defaultTab = agent.adapterType === "human" ? "issues" : "dashboard";
+    return <Navigate to={`/agents/${canonicalAgentRef}/${defaultTab}`} replace />;
   }
   const isPendingApproval = agent.status === "pending_approval";
   const showConfigActionBar = (activeView === "configuration" || activeView === "instructions") && (configDirty || configSaving);
@@ -833,18 +847,28 @@ export function AgentDetail() {
             <Plus className="h-3.5 w-3.5 sm:mr-1" />
             <span className="hidden sm:inline">Assign Task</span>
           </Button>
-          <RunButton
-            onClick={() => agentAction.mutate("invoke")}
-            disabled={agentAction.isPending || isPendingApproval}
-            label="Run Heartbeat"
-          />
-          <PauseResumeButton
-            isPaused={agent.status === "paused"}
-            onPause={() => agentAction.mutate("pause")}
-            onResume={() => agentAction.mutate("resume")}
-            disabled={agentAction.isPending || isPendingApproval}
-          />
-          <span className="hidden sm:inline"><StatusBadge status={agent.status} /></span>
+          {agent.adapterType !== "human" && (
+            <>
+              <RunButton
+                onClick={() => agentAction.mutate("invoke")}
+                disabled={agentAction.isPending || isPendingApproval}
+                label="Run Heartbeat"
+              />
+              <PauseResumeButton
+                isPaused={agent.status === "paused"}
+                onPause={() => agentAction.mutate("pause")}
+                onResume={() => agentAction.mutate("resume")}
+                disabled={agentAction.isPending || isPendingApproval}
+              />
+            </>
+          )}
+          {agent.adapterType === "human" ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-medium">
+              <User className="h-3 w-3" /> Human
+            </span>
+          ) : (
+            <span className="hidden sm:inline"><StatusBadge status={agent.status} /></span>
+          )}
           {mobileLiveRun && (
             <Link
               to={`/agents/${canonicalAgentRef}/runs/${mobileLiveRun.id}`}
@@ -907,7 +931,10 @@ export function AgentDetail() {
           onValueChange={(value) => navigate(`/agents/${canonicalAgentRef}/${value}`)}
         >
           <PageTabBar
-            items={[
+            items={agent.adapterType === "human" ? [
+              { value: "issues", label: "Issues" },
+              { value: "dashboard", label: "Dashboard" },
+            ] : [
               { value: "dashboard", label: "Dashboard" },
               { value: "instructions", label: "Instructions" },
               { value: "skills", label: "Skills" },
@@ -1048,6 +1075,329 @@ export function AgentDetail() {
           />
         </div>
       ) : null}
+
+      {activeView === "issues" && agent.adapterType === "human" && resolvedCompanyId && (
+        <HumanIssuesTab
+          agentId={agent.id}
+          companyId={resolvedCompanyId}
+          agentName={agent.name}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ---- Human Issues Tab ---- */
+
+const priorityColors: Record<string, string> = {
+  critical: "bg-red-500/10 text-red-600 dark:text-red-400",
+  high: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
+  medium: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",
+  low: "bg-green-500/10 text-green-600 dark:text-green-400",
+};
+
+const issueStatusColors: Record<string, string> = {
+  backlog: "bg-neutral-500/10 text-neutral-500",
+  todo: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  in_progress: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
+  in_review: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",
+  done: "bg-green-500/10 text-green-600 dark:text-green-400",
+  blocked: "bg-red-500/10 text-red-600 dark:text-red-400",
+  cancelled: "bg-neutral-500/10 text-neutral-400",
+};
+
+const issueStatusLabels: Record<string, string> = {
+  backlog: "Backlog",
+  todo: "Todo",
+  in_progress: "In Progress",
+  in_review: "In Review",
+  done: "Done",
+  blocked: "Blocked",
+  cancelled: "Cancelled",
+};
+
+function HumanIssuesTab({
+  agentId,
+  companyId,
+  agentName,
+}: {
+  agentId: string;
+  companyId: string;
+  agentName: string;
+}) {
+  const queryClient = useQueryClient();
+  const { pushToast } = useToast();
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [expandedIssues, setExpandedIssues] = useState<Set<string>>(new Set());
+  const [commentTexts, setCommentTexts] = useState<Record<string, string>>({});
+  const [reloadCents, setReloadCents] = useState<Record<string, number>>({});
+
+  const { data: issues, isLoading } = useQuery({
+    queryKey: ["human-agent-issues", agentId],
+    queryFn: () => issuesApi.list(companyId, { assigneeAgentId: agentId }),
+  });
+
+  const updateIssueMutation = useMutation({
+    mutationFn: ({ issueId, status }: { issueId: string; status: string }) =>
+      issuesApi.update(issueId, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["human-agent-issues", agentId] });
+      pushToast({ title: "Status updated", tone: "success" });
+    },
+    onError: (err: Error) => {
+      pushToast({ title: "Failed to update status", body: err.message, tone: "error" });
+    },
+  });
+
+  const addCommentMutation = useMutation({
+    mutationFn: ({ issueId, body }: { issueId: string; body: string }) =>
+      issuesApi.addComment(issueId, body),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["human-agent-issues", agentId] });
+      setCommentTexts((prev) => ({ ...prev, [variables.issueId]: "" }));
+      pushToast({ title: "Comment posted", tone: "success" });
+    },
+    onError: (err: Error) => {
+      pushToast({ title: "Failed to post comment", body: err.message, tone: "error" });
+    },
+  });
+
+  const budgetReloadMutation = useMutation({
+    mutationFn: ({ targetAgentId, cents }: { targetAgentId: string; cents: number }) =>
+      fetch(`/api/agents/${targetAgentId}/budget-reload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ reloadCents: cents }),
+      }).then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          throw new Error((body as { error?: string } | null)?.error ?? `Request failed: ${res.status}`);
+        }
+        return res.json();
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["human-agent-issues", agentId] });
+      pushToast({ title: "Budget reloaded successfully", tone: "success" });
+    },
+    onError: (err: Error) => {
+      pushToast({ title: "Budget reload failed", body: err.message, tone: "error" });
+    },
+  });
+
+  const toggleExpanded = (issueId: string) => {
+    setExpandedIssues((prev) => {
+      const next = new Set(prev);
+      if (next.has(issueId)) next.delete(issueId);
+      else next.add(issueId);
+      return next;
+    });
+  };
+
+  const filteredIssues = useMemo(() => {
+    if (!issues) return [];
+    if (statusFilter === "all") return issues;
+    return issues.filter((i) => i.status === statusFilter);
+  }, [issues, statusFilter]);
+
+  if (isLoading) return <PageSkeleton variant="detail" />;
+
+  const filterOptions = [
+    { value: "all", label: "All" },
+    { value: "todo", label: "Todo" },
+    { value: "in_progress", label: "In Progress" },
+    { value: "blocked", label: "Blocked" },
+    { value: "done", label: "Done" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Filter bar */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {filterOptions.map((opt) => (
+          <Button
+            key={opt.value}
+            variant={statusFilter === opt.value ? "default" : "outline"}
+            size="sm"
+            onClick={() => setStatusFilter(opt.value)}
+          >
+            {opt.label}
+          </Button>
+        ))}
+        <span className="text-xs text-muted-foreground ml-auto">
+          {filteredIssues.length} issue{filteredIssues.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      {filteredIssues.length === 0 && (
+        <p className="text-sm text-muted-foreground py-8 text-center">
+          No issues found{statusFilter !== "all" ? ` with status "${issueStatusLabels[statusFilter] ?? statusFilter}"` : ""}.
+        </p>
+      )}
+
+      {/* Issue cards */}
+      {filteredIssues.map((issue) => {
+        const isExpanded = expandedIssues.has(issue.id);
+        const isBudgetReload = issue.title.startsWith("Budget reload:");
+        const commentText = commentTexts[issue.id] ?? "";
+        const cents = reloadCents[issue.id] ?? 2000;
+
+        // Try to extract the target agent ID from the issue description for budget reloads
+        const budgetAgentIdMatch = isBudgetReload
+          ? issue.description?.match(/agent[_\s]?id[:\s]*([0-9a-f-]{36})/i)
+          : null;
+        const budgetTargetAgentId = budgetAgentIdMatch?.[1] ?? null;
+
+        return (
+          <div
+            key={issue.id}
+            className="rounded-lg border bg-card p-4 space-y-3"
+          >
+            {/* Header row */}
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <button
+                  onClick={() => toggleExpanded(issue.id)}
+                  className="shrink-0 p-0.5 hover:bg-accent rounded"
+                >
+                  {isExpanded ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </button>
+                <span className="text-xs font-mono text-muted-foreground shrink-0">
+                  {issue.identifier ?? issue.id.slice(0, 8)}
+                </span>
+                <span className="text-sm font-medium truncate">{issue.title}</span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-medium", priorityColors[issue.priority] ?? "bg-neutral-500/10 text-neutral-500")}>
+                  {issue.priority}
+                </span>
+                <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-medium", issueStatusColors[issue.status] ?? "bg-neutral-500/10 text-neutral-500")}>
+                  {issueStatusLabels[issue.status] ?? issue.status}
+                </span>
+              </div>
+            </div>
+
+            {/* Expanded content */}
+            {isExpanded && (
+              <div className="space-y-3 pl-7">
+                {/* Description */}
+                {issue.description && (
+                  <div className="text-xs text-muted-foreground whitespace-pre-wrap border-l-2 border-muted pl-3">
+                    {issue.description}
+                  </div>
+                )}
+
+                {/* Budget reload section */}
+                {isBudgetReload && (
+                  <div className="flex items-center gap-2 p-2 rounded bg-amber-500/5 border border-amber-500/20">
+                    <DollarSign className="h-4 w-4 text-amber-500 shrink-0" />
+                    <span className="text-xs text-amber-600 dark:text-amber-400">Budget reload request</span>
+                    <Input
+                      type="number"
+                      className="h-7 w-24 text-xs"
+                      value={cents}
+                      onChange={(e) =>
+                        setReloadCents((prev) => ({
+                          ...prev,
+                          [issue.id]: Number(e.target.value),
+                        }))
+                      }
+                      placeholder="cents"
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      = ${(cents / 100).toFixed(2)}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      disabled={budgetReloadMutation.isPending || !budgetTargetAgentId}
+                      onClick={() => {
+                        if (budgetTargetAgentId) {
+                          budgetReloadMutation.mutate({
+                            targetAgentId: budgetTargetAgentId,
+                            cents,
+                          });
+                        }
+                      }}
+                    >
+                      {budgetReloadMutation.isPending ? (
+                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                      ) : null}
+                      Reload Budget
+                    </Button>
+                  </div>
+                )}
+
+                {/* Status change */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Status:</span>
+                  <Select
+                    value={issue.status}
+                    onValueChange={(value) =>
+                      updateIssueMutation.mutate({ issueId: issue.id, status: value })
+                    }
+                  >
+                    <SelectTrigger className="h-7 w-[140px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todo">Todo</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="blocked">Blocked</SelectItem>
+                      <SelectItem value="done">Done</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Comment area */}
+                <div className="space-y-1.5">
+                  <Textarea
+                    className="text-xs min-h-[60px]"
+                    placeholder="Add a comment..."
+                    value={commentText}
+                    onChange={(e) =>
+                      setCommentTexts((prev) => ({
+                        ...prev,
+                        [issue.id]: e.target.value,
+                      }))
+                    }
+                  />
+                  <div className="flex items-center justify-between">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      disabled={!commentText.trim() || addCommentMutation.isPending}
+                      onClick={() =>
+                        addCommentMutation.mutate({
+                          issueId: issue.id,
+                          body: commentText.trim(),
+                        })
+                      }
+                    >
+                      <MessageSquare className="h-3 w-3 mr-1" />
+                      Post Comment
+                    </Button>
+                    <Link
+                      to={`/issues/${issue.id}`}
+                      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground no-underline"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Full issue
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
