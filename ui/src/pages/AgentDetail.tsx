@@ -1135,6 +1135,8 @@ function HumanIssuesTab({
   const [expandedIssues, setExpandedIssues] = useState<Set<string>>(new Set());
   const [commentTexts, setCommentTexts] = useState<Record<string, string>>({});
   const [reloadCents, setReloadCents] = useState<Record<string, number>>({});
+  const [selectedAssignees, setSelectedAssignees] = useState<Record<string, string>>({});
+  const [reloadingIssueId, setReloadingIssueId] = useState<string | null>(null);
 
   const { data: issues, isLoading } = useQuery({
     queryKey: ["human-agent-issues", agentId],
@@ -1167,22 +1169,24 @@ function HumanIssuesTab({
   });
 
   const budgetReloadMutation = useMutation({
-    mutationFn: ({ targetAgentId, cents }: { targetAgentId: string; cents: number }) =>
-      fetch(`/api/agents/${targetAgentId}/budget-reload`, {
+    mutationFn: async ({ targetAgentId, cents, issueId }: { targetAgentId: string; cents: number; issueId: string }) => {
+      const res = await fetch(`/api/agents/${targetAgentId}/budget-reload`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ reloadCents: cents }),
-      }).then(async (res) => {
-        if (!res.ok) {
-          const body = await res.json().catch(() => null);
-          throw new Error((body as { error?: string } | null)?.error ?? `Request failed: ${res.status}`);
-        }
-        return res.json();
-      }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error((body as { error?: string } | null)?.error ?? `Request failed: ${res.status}`);
+      }
+      // Auto-mark the reload issue as done
+      await issuesApi.update(issueId, { status: "done", comment: `Budget reloaded: +$${(cents / 100).toFixed(2)}` });
+      return res.json();
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["human-agent-issues", agentId] });
-      pushToast({ title: "Budget reloaded successfully", tone: "success" });
+      pushToast({ title: "Budget reloaded and issue marked done", tone: "success" });
     },
     onError: (err: Error) => {
       pushToast({ title: "Budget reload failed", body: err.message, tone: "error" });
@@ -1218,7 +1222,7 @@ function HumanIssuesTab({
   const filteredIssues = useMemo(() => {
     if (!issues) return [];
     if (statusFilter === "all") return issues;
-    if (statusFilter === "budget") return issues.filter((i) => i.title.startsWith("Budget reload:"));
+    if (statusFilter === "budget") return issues.filter((i) => i.title.startsWith("Budget reload:") && i.status !== "done" && i.status !== "cancelled");
     return issues.filter((i) => i.status === statusFilter);
   }, [issues, statusFilter]);
 
@@ -1337,17 +1341,18 @@ function HumanIssuesTab({
                     <Button
                       size="sm"
                       className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"
-                      disabled={budgetReloadMutation.isPending || !budgetTargetAgentId}
+                      disabled={reloadingIssueId !== null || !budgetTargetAgentId}
                       onClick={() => {
                         if (budgetTargetAgentId) {
-                          budgetReloadMutation.mutate({
-                            targetAgentId: budgetTargetAgentId,
-                            cents,
-                          });
+                          setReloadingIssueId(issue.id);
+                          budgetReloadMutation.mutate(
+                            { targetAgentId: budgetTargetAgentId, cents, issueId: issue.id },
+                            { onSettled: () => setReloadingIssueId(null) },
+                          );
                         }
                       }}
                     >
-                      {budgetReloadMutation.isPending ? (
+                      {reloadingIssueId === issue.id ? (
                         <Loader2 className="h-3 w-3 animate-spin mr-1" />
                       ) : null}
                       Reload Budget
@@ -1355,55 +1360,30 @@ function HumanIssuesTab({
                   </div>
                 )}
 
-                {/* Status + Reassign row */}
-                <div className="flex items-center gap-4 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Status:</span>
-                    <Select
-                      value={issue.status}
-                      onValueChange={(value) =>
-                        updateIssueMutation.mutate({ issueId: issue.id, status: value })
-                      }
-                    >
-                      <SelectTrigger className="h-7 w-[140px] text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="todo">Todo</SelectItem>
-                        <SelectItem value="in_progress">In Progress</SelectItem>
-                        <SelectItem value="blocked">Blocked</SelectItem>
-                        <SelectItem value="done">Done</SelectItem>
-                        <SelectItem value="cancelled">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Assign to:</span>
-                    <Select
-                      value={issue.assigneeAgentId ?? ""}
-                      onValueChange={(value) =>
-                        reassignMutation.mutate({ issueId: issue.id, targetAgentId: value })
-                      }
-                    >
-                      <SelectTrigger className="h-7 w-[180px] text-xs">
-                        <SelectValue placeholder="Select agent..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(allAgents ?? [])
-                          .filter((a) => a.adapterType !== "openclaw_gateway")
-                          .sort((a, b) => a.name.localeCompare(b.name))
-                          .map((a) => (
-                            <SelectItem key={a.id} value={a.id}>
-                              {a.name}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                {/* Status row */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Status:</span>
+                  <Select
+                    value={issue.status}
+                    onValueChange={(value) =>
+                      updateIssueMutation.mutate({ issueId: issue.id, status: value })
+                    }
+                  >
+                    <SelectTrigger className="h-7 w-[140px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todo">Todo</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="blocked">Blocked</SelectItem>
+                      <SelectItem value="done">Done</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                {/* Comment area */}
-                <div className="space-y-1.5">
+                {/* Comment + Reassign area */}
+                <div className="space-y-2">
                   <Textarea
                     className="text-xs min-h-[60px]"
                     placeholder="Add a comment..."
@@ -1415,22 +1395,51 @@ function HumanIssuesTab({
                       }))
                     }
                   />
-                  <div className="flex items-center justify-between">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs"
-                      disabled={!commentText.trim() || addCommentMutation.isPending}
-                      onClick={() =>
-                        addCommentMutation.mutate({
-                          issueId: issue.id,
-                          body: commentText.trim(),
-                        })
-                      }
-                    >
-                      <MessageSquare className="h-3 w-3 mr-1" />
-                      Post Comment
-                    </Button>
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground">Assign to:</span>
+                        <Select
+                          value={selectedAssignees[issue.id] ?? ""}
+                          onValueChange={(value) =>
+                            setSelectedAssignees((prev) => ({ ...prev, [issue.id]: value }))
+                          }
+                        >
+                          <SelectTrigger className="h-7 w-[160px] text-xs">
+                            <SelectValue placeholder="(keep current)" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(allAgents ?? [])
+                              .filter((a) => a.adapterType !== "openclaw_gateway")
+                              .sort((a, b) => a.name.localeCompare(b.name))
+                              .map((a) => (
+                                <SelectItem key={a.id} value={a.id}>
+                                  {a.name}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+                        disabled={(!commentText.trim() && !selectedAssignees[issue.id]) || addCommentMutation.isPending || reassignMutation.isPending}
+                        onClick={async () => {
+                          const newAssignee = selectedAssignees[issue.id];
+                          const body = commentText.trim();
+                          if (body) {
+                            addCommentMutation.mutate({ issueId: issue.id, body });
+                          }
+                          if (newAssignee && newAssignee !== issue.assigneeAgentId) {
+                            reassignMutation.mutate({ issueId: issue.id, targetAgentId: newAssignee });
+                          }
+                          setSelectedAssignees((prev) => { const n = { ...prev }; delete n[issue.id]; return n; });
+                        }}
+                      >
+                        <MessageSquare className="h-3 w-3 mr-1" />
+                        {selectedAssignees[issue.id] && !commentText.trim() ? "Reassign" : "Post Comment"}
+                      </Button>
+                    </div>
                     <Link
                       to={`/issues/${issue.id}`}
                       className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground no-underline"
