@@ -1300,7 +1300,7 @@ function HumanIssuesTab({
                     <span className="text-xs text-amber-600 dark:text-amber-400">Budget reload request</span>
                     <Input
                       type="number"
-                      className="h-7 w-24 text-xs"
+                      className="h-7 w-24 text-xs bg-background border-amber-500/40 text-foreground"
                       value={cents}
                       onChange={(e) =>
                         setReloadCents((prev) => ({
