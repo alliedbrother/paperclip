@@ -28,6 +28,7 @@ import { adapterLabels, roleLabels, help } from "../components/agent-config-prim
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { assetsApi } from "../api/assets";
 import { getUIAdapter, buildTranscript } from "../adapters";
+import { displayPath, displayText } from "@/lib/display-path";
 import { StatusBadge } from "../components/StatusBadge";
 import { agentStatusDot, agentStatusDotDefault } from "../lib/status-colors";
 import { MarkdownBody } from "../components/MarkdownBody";
@@ -123,7 +124,7 @@ const SECRET_ENV_KEY_RE =
 const JWT_VALUE_RE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?$/;
 
 function redactPathText(value: string, censorUsernameInLogs: boolean) {
-  return redactHomePathUserSegments(value, { enabled: censorUsernameInLogs });
+  return displayText(redactHomePathUserSegments(value, { enabled: censorUsernameInLogs }));
 }
 
 function redactPathValue<T>(value: T, censorUsernameInLogs: boolean): T {
@@ -460,13 +461,13 @@ function WorkspaceOperationsSection({
               {operation.command && (
                 <div className="text-xs break-all">
                   <span className="text-muted-foreground">Command: </span>
-                  <span className="font-mono">{operation.command}</span>
+                  <span className="font-mono">{displayText(operation.command)}</span>
                 </div>
               )}
               {operation.cwd && (
                 <div className="text-xs break-all">
                   <span className="text-muted-foreground">Working dir: </span>
-                  <span className="font-mono">{operation.cwd}</span>
+                  <span className="font-mono">{displayPath(operation.cwd)}</span>
                 </div>
               )}
               {(asNonEmptyString(metadata?.branchName)
@@ -482,10 +483,10 @@ function WorkspaceOperationsSection({
                     <div><span className="text-muted-foreground">Base ref: </span><span className="font-mono">{metadata?.baseRef as string}</span></div>
                   )}
                   {asNonEmptyString(metadata?.worktreePath) && (
-                    <div className="break-all"><span className="text-muted-foreground">Worktree: </span><span className="font-mono">{metadata?.worktreePath as string}</span></div>
+                    <div className="break-all"><span className="text-muted-foreground">Worktree: </span><span className="font-mono">{displayPath(metadata?.worktreePath as string)}</span></div>
                   )}
                   {asNonEmptyString(metadata?.repoRoot) && (
-                    <div className="break-all"><span className="text-muted-foreground">Repo root: </span><span className="font-mono">{metadata?.repoRoot as string}</span></div>
+                    <div className="break-all"><span className="text-muted-foreground">Repo root: </span><span className="font-mono">{displayPath(metadata?.repoRoot as string)}</span></div>
                   )}
                   {asNonEmptyString(metadata?.cleanupAction) && (
                     <div><span className="text-muted-foreground">Cleanup: </span><span className="font-mono">{metadata?.cleanupAction as string}</span></div>
@@ -2372,9 +2373,9 @@ function PromptsTab({
                 </span>
                 {currentMode === "managed" ? (
                   <div className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground pt-1.5">
-                    <span className="min-w-0 truncate" title={currentRootPath || undefined}>{currentRootPath || "(managed)"}</span>
+                    <span className="min-w-0 truncate" title={displayPath(currentRootPath) || undefined}>{displayPath(currentRootPath) || "(managed)"}</span>
                     {currentRootPath && (
-                      <CopyText text={currentRootPath} className="shrink-0">
+                      <CopyText text={displayPath(currentRootPath)} className="shrink-0">
                         <Copy className="h-3.5 w-3.5" />
                       </CopyText>
                     )}
@@ -2400,7 +2401,7 @@ function PromptsTab({
                       placeholder="/absolute/path/to/agent/prompts"
                     />
                     {currentRootPath && (
-                      <CopyText text={currentRootPath} className="shrink-0">
+                      <CopyText text={displayPath(currentRootPath)} className="shrink-0">
                         <Copy className="h-3.5 w-3.5" />
                       </CopyText>
                     )}
@@ -3605,7 +3606,7 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType }: { run: Heartb
       {run.stderrExcerpt && (
         <div className="space-y-1">
           <span className="text-xs font-medium text-red-600 dark:text-red-400">stderr</span>
-          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">{run.stderrExcerpt}</pre>
+          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">{displayText(run.stderrExcerpt)}</pre>
         </div>
       )}
 
@@ -3613,7 +3614,7 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType }: { run: Heartb
       {run.stdoutExcerpt && !run.logRef && (
         <div className="space-y-1">
           <span className="text-xs font-medium text-muted-foreground">stdout</span>
-          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">{run.stdoutExcerpt}</pre>
+          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">{displayText(run.stdoutExcerpt)}</pre>
         </div>
       )}
 
@@ -4039,18 +4040,18 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             <div className="text-xs"><span className="text-muted-foreground">Adapter: </span>{adapterInvokePayload.adapterType}</div>
           )}
           {typeof adapterInvokePayload.cwd === "string" && (
-            <div className="text-xs break-all"><span className="text-muted-foreground">Working dir: </span><span className="font-mono">{adapterInvokePayload.cwd}</span></div>
+            <div className="text-xs break-all"><span className="text-muted-foreground">Working dir: </span><span className="font-mono">{displayPath(adapterInvokePayload.cwd)}</span></div>
           )}
           {typeof adapterInvokePayload.command === "string" && (
             <div className="text-xs break-all">
               <span className="text-muted-foreground">Command: </span>
               <span className="font-mono">
-                {[
+                {displayText([
                   adapterInvokePayload.command,
                   ...(Array.isArray(adapterInvokePayload.commandArgs)
                     ? adapterInvokePayload.commandArgs.filter((v): v is string => typeof v === "string")
                     : []),
-                ].join(" ")}
+                ].join(" "))}
               </span>
             </div>
           )}

@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { displayPath } from "@/lib/display-path";
 import { Link } from "@/lib/router";
 import type { Issue } from "@paperclipai/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -706,7 +707,7 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
                   <option value="">Choose an existing workspace</option>
                   {deduplicatedReusableWorkspaces.map((workspace) => (
                     <option key={workspace.id} value={workspace.id}>
-                      {workspace.name} · {workspace.status} · {workspace.branchName ?? workspace.cwd ?? workspace.id.slice(0, 8)}
+                      {workspace.name} · {workspace.status} · {workspace.branchName ?? (displayPath(workspace.cwd) || workspace.id.slice(0, 8))}
                     </option>
                   ))}
                 </select>
@@ -726,7 +727,7 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
                     {issue.currentExecutionWorkspace.status}
                   </div>
                   {issue.currentExecutionWorkspace.cwd && (
-                    <CopyableValue value={issue.currentExecutionWorkspace.cwd} mono className="text-[11px]" />
+                    <CopyableValue value={displayPath(issue.currentExecutionWorkspace.cwd)} mono className="text-[11px]" />
                   )}
                   {issue.currentExecutionWorkspace.branchName && (
                     <CopyableValue value={issue.currentExecutionWorkspace.branchName} label="Branch:" className="text-[11px]" />
@@ -737,7 +738,7 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
                 </div>
               )}
               {!issue.currentExecutionWorkspace && currentProject?.primaryWorkspace?.cwd && (
-                <CopyableValue value={currentProject.primaryWorkspace.cwd} mono className="text-[11px] text-muted-foreground" />
+                <CopyableValue value={displayPath(currentProject.primaryWorkspace.cwd)} mono className="text-[11px] text-muted-foreground" />
               )}
             </div>
           </PropertyRow>

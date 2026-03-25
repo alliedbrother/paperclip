@@ -1,4 +1,5 @@
 import { Link, useParams } from "@/lib/router";
+import { displayPath } from "@/lib/display-path";
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
 import { executionWorkspacesApi } from "../api/execution-workspaces";
@@ -56,7 +57,7 @@ export function ExecutionWorkspaceDetail() {
         <DetailRow label="Branch">{workspace.branchName ?? "None"}</DetailRow>
         <DetailRow label="Base ref">{workspace.baseRef ?? "None"}</DetailRow>
         <DetailRow label="Working dir">
-          <span className="break-all font-mono text-xs">{workspace.cwd ?? "None"}</span>
+          <span className="break-all font-mono text-xs">{workspace.cwd ? displayPath(workspace.cwd) : "None"}</span>
         </DetailRow>
         <DetailRow label="Provider ref">
           <span className="break-all font-mono text-xs">{workspace.providerRef ?? "None"}</span>
