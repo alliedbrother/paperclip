@@ -1246,7 +1246,7 @@ function HumanIssuesTab({
 
         // Try to extract the target agent ID from the issue description for budget reloads
         const budgetAgentIdMatch = isBudgetReload
-          ? issue.description?.match(/agent[_\s]?id[:\s]*([0-9a-f-]{36})/i)
+          ? issue.description?.match(/(?:id[:\s]+|agents\/)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i)
           : null;
         const budgetTargetAgentId = budgetAgentIdMatch?.[1] ?? null;
 
@@ -1315,8 +1315,7 @@ function HumanIssuesTab({
                     </span>
                     <Button
                       size="sm"
-                      variant="outline"
-                      className="h-7 text-xs"
+                      className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white"
                       disabled={budgetReloadMutation.isPending || !budgetTargetAgentId}
                       onClick={() => {
                         if (budgetTargetAgentId) {
