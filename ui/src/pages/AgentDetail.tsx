@@ -1196,9 +1196,27 @@ function HumanIssuesTab({
     });
   };
 
+  const { data: allAgents } = useQuery({
+    queryKey: ["company-agents-for-reassign", companyId],
+    queryFn: () => agentsApi.list(companyId),
+  });
+
+  const reassignMutation = useMutation({
+    mutationFn: ({ issueId, targetAgentId }: { issueId: string; targetAgentId: string }) =>
+      issuesApi.update(issueId, { assigneeAgentId: targetAgentId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["human-agent-issues", agentId] });
+      pushToast({ title: "Issue reassigned", tone: "success" });
+    },
+    onError: (err: Error) => {
+      pushToast({ title: "Reassignment failed", body: err.message, tone: "error" });
+    },
+  });
+
   const filteredIssues = useMemo(() => {
     if (!issues) return [];
     if (statusFilter === "all") return issues;
+    if (statusFilter === "budget") return issues.filter((i) => i.title.startsWith("Budget reload:"));
     return issues.filter((i) => i.status === statusFilter);
   }, [issues, statusFilter]);
 
@@ -1210,6 +1228,7 @@ function HumanIssuesTab({
     { value: "in_progress", label: "In Progress" },
     { value: "blocked", label: "Blocked" },
     { value: "done", label: "Done" },
+    { value: "budget", label: "💰 Budget" },
   ];
 
   return (
@@ -1334,26 +1353,51 @@ function HumanIssuesTab({
                   </div>
                 )}
 
-                {/* Status change */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Status:</span>
-                  <Select
-                    value={issue.status}
-                    onValueChange={(value) =>
-                      updateIssueMutation.mutate({ issueId: issue.id, status: value })
-                    }
-                  >
-                    <SelectTrigger className="h-7 w-[140px] text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="todo">Todo</SelectItem>
-                      <SelectItem value="in_progress">In Progress</SelectItem>
-                      <SelectItem value="blocked">Blocked</SelectItem>
-                      <SelectItem value="done">Done</SelectItem>
-                      <SelectItem value="cancelled">Cancelled</SelectItem>
-                    </SelectContent>
-                  </Select>
+                {/* Status + Reassign row */}
+                <div className="flex items-center gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Status:</span>
+                    <Select
+                      value={issue.status}
+                      onValueChange={(value) =>
+                        updateIssueMutation.mutate({ issueId: issue.id, status: value })
+                      }
+                    >
+                      <SelectTrigger className="h-7 w-[140px] text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todo">Todo</SelectItem>
+                        <SelectItem value="in_progress">In Progress</SelectItem>
+                        <SelectItem value="blocked">Blocked</SelectItem>
+                        <SelectItem value="done">Done</SelectItem>
+                        <SelectItem value="cancelled">Cancelled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Assign to:</span>
+                    <Select
+                      value={issue.assigneeAgentId ?? ""}
+                      onValueChange={(value) =>
+                        reassignMutation.mutate({ issueId: issue.id, targetAgentId: value })
+                      }
+                    >
+                      <SelectTrigger className="h-7 w-[180px] text-xs">
+                        <SelectValue placeholder="Select agent..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(allAgents ?? [])
+                          .filter((a) => a.adapterType !== "openclaw_gateway")
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map((a) => (
+                            <SelectItem key={a.id} value={a.id}>
+                              {a.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 {/* Comment area */}
