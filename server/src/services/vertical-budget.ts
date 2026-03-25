@@ -188,7 +188,7 @@ export function verticalBudgetService(db: Db, wakeup?: WakeupFn) {
 
   type ReloadResult =
     | { action: "reload_requested"; issueId: string; issueIdentifier: string; assignedTo: string; reloadAmount: number }
-    | { action: "escalated_to_human"; issueId: string; issueIdentifier: string; assignedTo: string; reason: string }
+    | { action: "escalated_to_vp_finance"; issueId: string; issueIdentifier: string; assignedTo: string; reason: string }
     | { action: "skipped"; reason: string }
     | { action: "error"; reason: string };
 
@@ -210,51 +210,8 @@ export function verticalBudgetService(db: Db, wakeup?: WakeupFn) {
       return { action: "skipped", reason: "Open reload issue already exists for this agent" };
     }
 
-    const vp = await getVerticalHead(exhaustedAgentId);
-    if (!vp) {
-      // No vertical head — escalate directly to human in chain (e.g. CEO)
-      const human = await findHumanInChain(exhaustedAgentId);
-      const vpFinance = await findVpFinance(agent.companyId);
-      const assignee = human ?? vpFinance;
-      if (!assignee) {
-        logger.warn({ agentId: exhaustedAgentId }, "budget reload: no VP, no human, no VP Finance found");
-        return { action: "error", reason: "No VP, human, or VP Finance found in reporting chain" };
-      }
-
-      const title = `Budget reload: ${agent.name}`;
-      const description = [
-        `Agent ${agent.name} (id: ${agent.id}) exhausted budget.`,
-        `Spent: $${(agent.spentMonthlyCents / 100).toFixed(2)}, Budget: $${(agent.budgetMonthlyCents / 100).toFixed(2)}`,
-        ``,
-        `This agent is not part of a vertical budget pool. A human must decide whether to increase the budget.`,
-        `Assigned to: ${assignee.name}`,
-      ].join("\n");
-
-      const issue = await createIssueWithCounter(agent.companyId, {
-        title,
-        description,
-        status: "todo",
-        assigneeAgentId: assignee.id,
-      });
-
-      await wakeAssignee(issue);
-      logger.info(
-        { agentId: exhaustedAgentId, escalatedTo: assignee.name, issueId: issue.id },
-        "budget reload: no vertical — escalated to human in chain",
-      );
-      return { action: "escalated_to_human", issueId: issue.id, issueIdentifier: issue.identifier ?? "", assignedTo: assignee.name, reason: "no_vertical_head" };
-    }
-
-    const budget = await computeVerticalBudget(vp.id);
-    if (!budget) {
-      logger.warn({ agentId: exhaustedAgentId, vpId: vp.id }, "budget reload: could not compute vertical budget");
-      return { action: "error", reason: "Could not compute vertical budget" };
-    }
-
-    const config = getVerticalBudgetConfig(vp);
-    const reloadFraction = config?.reloadFraction ?? 0.5;
-    const reloadAmount = Math.round(reloadFraction * agent.budgetMonthlyCents);
-
+    // ALL reload requests go to VP Finance first.
+    // VP Finance decides: reload from vertical pool, or escalate to human.
     const vpFinance = await findVpFinance(agent.companyId);
     if (!vpFinance) {
       logger.warn({ companyId: agent.companyId }, "budget reload: VP Finance agent not found");
@@ -262,61 +219,60 @@ export function verticalBudgetService(db: Db, wakeup?: WakeupFn) {
     }
 
     const title = `Budget reload: ${agent.name}`;
+    const vp = await getVerticalHead(exhaustedAgentId);
+    const budget = vp ? await computeVerticalBudget(vp.id) : null;
+    const config = vp ? getVerticalBudgetConfig(vp) : null;
+    const reloadFraction = config?.reloadFraction ?? 0.5;
+    const reloadAmount = Math.round(reloadFraction * agent.budgetMonthlyCents);
 
-    if (budget.remaining >= reloadAmount) {
-      // Create issue for VP Finance to reload
-      const description = [
-        `Agent ${agent.name} (id: ${agent.id}) exhausted budget.`,
-        `Spent: $${(agent.spentMonthlyCents / 100).toFixed(2)}, Budget: $${(agent.budgetMonthlyCents / 100).toFixed(2)}`,
-        `Vertical: ${vp.name}, Vertical Remaining: $${(budget.remaining / 100).toFixed(2)}`,
-        ``,
-        `Reload requested: $${(reloadAmount / 100).toFixed(2)}`,
-        ``,
-        `ACTION: Call POST /api/agents/${agent.id}/budget-reload with body {"reloadCents": ${reloadAmount}}`,
-        `This increases the budget and sets the agent back to idle in one call.`,
-      ].join("\n");
+    const verticalInfo = budget
+      ? `Vertical: ${budget.vpName}, Pool: $${(budget.verticalTotal / 100).toFixed(2)}, Remaining: $${(budget.remaining / 100).toFixed(2)}`
+      : `This agent is not part of a vertical budget pool.`;
 
-      const issue = await createIssueWithCounter(agent.companyId, {
-        title,
-        description,
-        status: "todo",
-        assigneeAgentId: vpFinance.id,
-      });
+    const canAutoReload = budget && budget.remaining >= reloadAmount;
 
-      await wakeAssignee(issue);
-      logger.info(
-        { agentId: exhaustedAgentId, vpFinanceId: vpFinance.id, reloadAmount, issueId: issue.id },
-        "budget reload: issue created for VP Finance",
-      );
-      return { action: "reload_requested", issueId: issue.id, issueIdentifier: issue.identifier ?? "", assignedTo: vpFinance.name, reloadAmount };
-    } else {
-      // Escalate to human — vertical pool exhausted
-      const human = await findHumanInChain(exhaustedAgentId);
-      const description = [
-        `Agent ${agent.name} (id: ${agent.id}) exhausted budget.`,
-        `Spent: $${(agent.spentMonthlyCents / 100).toFixed(2)}, Budget: $${(agent.budgetMonthlyCents / 100).toFixed(2)}`,
-        `Vertical: ${vp.name}, Vertical Remaining: $${(budget.remaining / 100).toFixed(2)}`,
-        ``,
-        `Vertical budget is EXHAUSTED. Automatic reload requires $${(reloadAmount / 100).toFixed(2)} but only $${(budget.remaining / 100).toFixed(2)} remains.`,
-        `A human must decide whether to increase the vertical budget.`,
-        human ? `Assigned to: ${human.name} (human agent in vertical chain)` : `No human found in chain — assigned to VP Finance for manual handling.`,
-      ].join("\n");
+    const description = [
+      `Agent ${agent.name} (id: ${agent.id}) exhausted budget.`,
+      `Spent: $${(agent.spentMonthlyCents / 100).toFixed(2)}, Budget: $${(agent.budgetMonthlyCents / 100).toFixed(2)}`,
+      `${verticalInfo}`,
+      ``,
+      canAutoReload
+        ? [
+            `Reload requested: $${(reloadAmount / 100).toFixed(2)}`,
+            ``,
+            `ACTION: Call POST /api/agents/${agent.id}/budget-reload with body {"reloadCents": ${reloadAmount}}`,
+            `This increases the budget and sets the agent back to idle in one call.`,
+          ].join("\n")
+        : [
+            budget
+              ? `Vertical budget is EXHAUSTED. Reload requires $${(reloadAmount / 100).toFixed(2)} but only $${(budget.remaining / 100).toFixed(2)} remains.`
+              : `No vertical budget pool exists for this agent.`,
+            ``,
+            `VP Finance: please check the vertical budget via GET /api/agents/${agent.id}/vertical-budget`,
+            `If you can reload, call POST /api/agents/${agent.id}/budget-reload with {"reloadCents": ${reloadAmount}}`,
+            `If the vertical is exhausted, escalate to the next human above in the org chart.`,
+          ].join("\n"),
+    ].join("\n");
 
-      const issue = await createIssueWithCounter(agent.companyId, {
-        title,
-        description,
-        status: "todo",
-        assigneeAgentId: human ? human.id : vpFinance.id,
-      });
+    const issue = await createIssueWithCounter(agent.companyId, {
+      title,
+      description,
+      status: "todo",
+      assigneeAgentId: vpFinance.id,
+    });
 
-      await wakeAssignee(issue);
-      const assignee = human ?? vpFinance;
-      logger.info(
-        { agentId: exhaustedAgentId, escalatedTo: assignee.name, issueId: issue.id },
-        "budget reload: escalated — vertical budget exhausted",
-      );
-      return { action: "escalated_to_human", issueId: issue.id, issueIdentifier: issue.identifier ?? "", assignedTo: assignee.name, reason: "vertical_budget_exhausted" };
-    }
+    await wakeAssignee(issue);
+    logger.info(
+      { agentId: exhaustedAgentId, vpFinanceId: vpFinance.id, reloadAmount, canAutoReload, issueId: issue.id },
+      "budget reload: issue created for VP Finance",
+    );
+    return {
+      action: canAutoReload ? "reload_requested" : "escalated_to_vp_finance",
+      issueId: issue.id,
+      issueIdentifier: issue.identifier ?? "",
+      assignedTo: vpFinance.name,
+      ...(canAutoReload ? { reloadAmount } : { reason: budget ? "vertical_budget_exhausted" : "no_vertical_head" }),
+    } as ReloadResult;
   }
 
   async function executeReload(agentId: string, additionalCents: number) {
