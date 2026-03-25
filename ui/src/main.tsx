@@ -16,10 +16,12 @@ import { ThemeProvider } from "./context/ThemeContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { initPluginBridge } from "./plugins/bridge-init";
 import { PluginLauncherProvider } from "./plugins/launchers";
+import { startBrandMask } from "./lib/brand-mask";
 import "@mdxeditor/editor/style.css";
 import "./index.css";
 
 initPluginBridge(React, ReactDOM);
+startBrandMask();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
