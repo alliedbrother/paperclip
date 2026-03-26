@@ -8,6 +8,7 @@ import {
   useState,
   type DragEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   CodeMirrorEditor,
   MDXEditor,
@@ -82,6 +83,10 @@ interface MentionState {
   query: string;
   top: number;
   left: number;
+  /** Viewport-relative Y for fixed positioning (used by portal dropdown) */
+  fixedTop: number;
+  /** Viewport-relative X for fixed positioning (used by portal dropdown) */
+  fixedLeft: number;
   textNode: Text;
   atPos: number;
   endPos: number;
@@ -155,6 +160,8 @@ function detectMention(container: HTMLElement): MentionState | null {
     query,
     top: rect.bottom - containerRect.top,
     left: rect.left - containerRect.left,
+    fixedTop: rect.bottom,
+    fixedLeft: rect.left,
     textNode: textNode as Text,
     atPos,
     endPos: offset,
@@ -206,6 +213,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   // Mention state (ref kept in sync so callbacks always see the latest value)
   const [mentionState, setMentionState] = useState<MentionState | null>(null);
   const mentionStateRef = useRef<MentionState | null>(null);
+  const mentionSelectingRef = useRef(false); // guard: prevent checkMention from clearing state during selection
   const [mentionIndex, setMentionIndex] = useState(0);
   const mentionActive = mentionState !== null && mentions && mentions.length > 0;
   const mentionOptionByKey = useMemo(() => {
@@ -332,6 +340,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
 
   // Mention detection: listen for selection changes and input events
   const checkMention = useCallback(() => {
+    // Skip detection while a mention is being selected (prevents race with onMouseDown)
+    if (mentionSelectingRef.current) return;
     if (!mentions || mentions.length === 0 || !containerRef.current) {
       mentionStateRef.current = null;
       setMentionState(null);
@@ -554,11 +564,11 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         plugins={plugins}
       />
 
-      {/* Mention dropdown */}
-      {mentionActive && filteredMentions.length > 0 && (
+      {/* Mention dropdown – rendered via portal with fixed positioning to escape overflow clipping */}
+      {mentionActive && filteredMentions.length > 0 && createPortal(
         <div
-          className="absolute z-50 min-w-[180px] max-h-[200px] overflow-y-auto rounded-md border border-border bg-popover shadow-md"
-          style={{ top: mentionState.top + 4, left: mentionState.left }}
+          className="fixed z-[9999] min-w-[180px] max-h-[200px] overflow-y-auto rounded-md border border-border bg-popover shadow-md"
+          style={{ top: mentionState.fixedTop + 4, left: mentionState.fixedLeft }}
         >
           {filteredMentions.map((option, i) => (
             <button
@@ -569,7 +579,11 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
               )}
               onMouseDown={(e) => {
                 e.preventDefault(); // prevent blur
+                e.stopPropagation();
+                mentionSelectingRef.current = true;
                 selectMention(option);
+                // Clear guard after a tick so checkMention resumes
+                requestAnimationFrame(() => { mentionSelectingRef.current = false; });
               }}
               onMouseEnter={() => setMentionIndex(i)}
             >
@@ -592,7 +606,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
               )}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
 
       {isDragOver && canDropImage && (

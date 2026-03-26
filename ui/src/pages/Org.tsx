@@ -8,7 +8,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
-import { ChevronRight, GitBranch } from "lucide-react";
+import { ChevronRight, GitBranch, User } from "lucide-react";
 import { cn } from "../lib/utils";
 
 function OrgTree({
@@ -64,20 +64,24 @@ function OrgTreeNode({
         ) : (
           <span className="w-4" />
         )}
-        <span
-          className={cn(
-            "h-2 w-2 rounded-full shrink-0",
-            node.status === "active"
-              ? "bg-green-400"
-              : node.status === "paused"
-                ? "bg-yellow-400"
-                : node.status === "pending_approval"
-                  ? "bg-amber-400"
-                : node.status === "error"
-                  ? "bg-red-400"
-                  : "bg-neutral-400"
-          )}
-        />
+        {node.adapterType === "human" ? (
+          <User className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+        ) : (
+          <span
+            className={cn(
+              "h-2 w-2 rounded-full shrink-0",
+              node.status === "active"
+                ? "bg-green-400"
+                : node.status === "paused"
+                  ? "bg-yellow-400"
+                  : node.status === "pending_approval"
+                    ? "bg-amber-400"
+                  : node.status === "error"
+                    ? "bg-red-400"
+                    : "bg-neutral-400"
+            )}
+          />
+        )}
         <span className="font-medium flex-1">{node.name}</span>
         <span className="text-xs text-muted-foreground">{node.role}</span>
         <StatusBadge status={node.status} />

@@ -1,5 +1,47 @@
 import { useState, useMemo } from "react";
 import {
+  Bot,
+  Cpu,
+  Brain,
+  Zap,
+  Rocket,
+  Code,
+  Terminal,
+  Shield,
+  Eye,
+  Search,
+  Wrench,
+  Hammer,
+  Lightbulb,
+  Sparkles,
+  Star,
+  Heart,
+  Flame,
+  Bug,
+  Cog,
+  Database,
+  Globe,
+  Lock,
+  Mail,
+  MessageSquare,
+  FileCode,
+  GitBranch,
+  Package,
+  Puzzle,
+  Target,
+  Wand2,
+  Atom,
+  CircuitBoard,
+  Radar,
+  Swords,
+  Telescope,
+  Microscope,
+  Crown,
+  Gem,
+  Hexagon,
+  Pentagon,
+  Fingerprint,
+  User,
   type LucideIcon,
 } from "lucide-react";
 import { AGENT_ICON_NAMES, type AgentIconName } from "@paperclipai/shared";
@@ -17,9 +59,13 @@ const DEFAULT_ICON: AgentIconName = "bot";
 interface AgentIconProps {
   icon: string | null | undefined;
   className?: string;
+  adapterType?: string | null;
 }
 
-export function AgentIcon({ icon, className }: AgentIconProps) {
+export function AgentIcon({ icon, className, adapterType }: AgentIconProps) {
+  if (adapterType === "human") {
+    return <User className={className} />;
+  }
   const Icon = getAgentIcon(icon);
   return <Icon className={className} />;
 }

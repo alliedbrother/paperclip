@@ -13,6 +13,7 @@ import {
   heartbeatRunEvents,
   heartbeatRuns,
   issues,
+  issueComments,
   projects,
   projectWorkspaces,
 } from "@paperclipai/db";
@@ -552,7 +553,7 @@ export function shouldResetTaskSessionForWake(
 export function formatRuntimeWorkspaceWarningLog(warning: string) {
   return {
     stream: "stdout" as const,
-    chunk: `[paperclip] ${warning}\n`,
+    chunk: `[atomclaw] ${warning}\n`,
   };
 }
 
@@ -1646,6 +1647,18 @@ export function heartbeatService(db: Db) {
       projectId: readNonEmptyString(context.projectId),
     });
     if (budgetBlock) {
+      if (budgetBlock.scopeType === "agent") {
+        const { verticalBudgetService } = await import("./vertical-budget.js");
+        void verticalBudgetService(db, enqueueWakeup).requestBudgetReload(run.agentId)
+          .catch(err => logger.warn({ err, agentId: run.agentId }, "auto budget reload request failed on run cancel"));
+        const blockIssueId = readNonEmptyString(context.issueId);
+        if (blockIssueId) {
+          void issuesSvc.addComment(blockIssueId,
+            "⚠️ **Budget Exhausted** — I cannot work on this issue because my monthly token budget has been exceeded. A reload request has been submitted to VP Finance. I will resume work once my budget is replenished.",
+            { agentId: run.agentId },
+          ).catch(err => logger.warn({ err, agentId: run.agentId, issueId: blockIssueId }, "failed to post budget-block comment on run cancel"));
+        }
+      }
       await cancelRunInternal(run.id, budgetBlock.reason);
       return null;
     }
@@ -1967,6 +1980,25 @@ export function heartbeatService(db: Db) {
 
     const runtime = await ensureRuntimeState(agent);
     const context = parseObject(run.contextSnapshot);
+
+    // Fetch wake comment body so the agent sees it directly in the prompt
+    const wakeCommentIdForFetch = readNonEmptyString(context.wakeCommentId) ?? readNonEmptyString(context.commentId);
+    if (wakeCommentIdForFetch && !readNonEmptyString(context.wakeCommentBody)) {
+      try {
+        const comment = await db
+          .select({ body: issueComments.body, authorAgentId: issueComments.authorAgentId, authorUserId: issueComments.authorUserId })
+          .from(issueComments)
+          .where(eq(issueComments.id, wakeCommentIdForFetch))
+          .then((rows) => rows[0] ?? null);
+        if (comment?.body) {
+          context.wakeCommentBody = comment.body;
+          context.wakeCommentAuthorType = comment.authorUserId ? "user" : "agent";
+        }
+      } catch (err) {
+        logger.warn({ err, commentId: wakeCommentIdForFetch }, "Failed to fetch wake comment body");
+      }
+    }
+
     const taskKey = deriveTaskKey(context, null);
     const sessionCodec = getAdapterSessionCodec(agent.adapterType);
     const issueId = readNonEmptyString(context.issueId);
@@ -2478,7 +2510,7 @@ export function heartbeatService(db: Db) {
         } catch (err) {
           await onLog(
             "stderr",
-            `[paperclip] Failed to post workspace-ready comment: ${err instanceof Error ? err.message : String(err)}\n`,
+            `[atomclaw] Failed to post workspace-ready comment: ${err instanceof Error ? err.message : String(err)}\n`,
           );
         }
       }
@@ -2568,7 +2600,7 @@ export function heartbeatService(db: Db) {
           } catch (err) {
             await onLog(
               "stderr",
-              `[paperclip] Failed to post adapter-managed runtime comment: ${err instanceof Error ? err.message : String(err)}\n`,
+              `[atomclaw] Failed to post adapter-managed runtime comment: ${err instanceof Error ? err.message : String(err)}\n`,
             );
           }
         }
@@ -3013,6 +3045,11 @@ export function heartbeatService(db: Db) {
       explicitResumeSession?.sessionDisplayId ??
       await resolveSessionBeforeForWakeup(agent, effectiveTaskKey);
 
+    // Human agents don't execute heartbeats — skip silently
+    if (agent.adapterType === "human") {
+      return null;
+    }
+
     const writeSkippedRequest = async (skipReason: string) => {
       await db.insert(agentWakeupRequests).values({
         companyId: agent.companyId,
@@ -3044,6 +3081,18 @@ export function heartbeatService(db: Db) {
     });
     if (budgetBlock) {
       await writeSkippedRequest("budget.blocked");
+      // Auto-request budget reload when agent is blocked by budget hard-stop
+      if (budgetBlock.scopeType === "agent") {
+        const { verticalBudgetService } = await import("./vertical-budget.js");
+        void verticalBudgetService(db, enqueueWakeup).requestBudgetReload(agentId)
+          .catch(err => logger.warn({ err, agentId }, "auto budget reload request failed on hard-stop block"));
+        if (issueId) {
+          void issuesSvc.addComment(issueId,
+            "⚠️ **Budget Exhausted** — I cannot work on this issue because my monthly token budget has been exceeded. A reload request has been submitted to VP Finance. I will resume work once my budget is replenished.",
+            { agentId },
+          ).catch(err => logger.warn({ err, agentId, issueId }, "failed to post budget-block comment"));
+        }
+      }
       throw conflict(budgetBlock.reason, {
         scopeType: budgetBlock.scopeType,
         scopeId: budgetBlock.scopeId,

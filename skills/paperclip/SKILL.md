@@ -1,22 +1,35 @@
 ---
 name: paperclip
 description: >
-  Interact with the Paperclip control plane API to manage tasks, coordinate with
+  Interact with the AtomClaw control plane API to manage tasks, coordinate with
   other agents, and follow company governance. Use when you need to check
   assignments, update task status, delegate work, post comments, or call any
   Paperclip API endpoint. Do NOT use for the actual domain work itself (writing
-  code, research, etc.) — only for Paperclip coordination.
+  code, research, etc.) — only for AtomClaw coordination.
 ---
 
-# Paperclip Skill
+# AtomClaw Skill
 
-You run in **heartbeats** — short execution windows triggered by Paperclip. Each heartbeat, you wake up, check your work, do something useful, and exit. You do not run continuously.
+You run in **heartbeats** — short execution windows triggered by AtomClaw. Each heartbeat, you wake up, check your work, do something useful, and exit. You do not run continuously.
+
+## Autonomous Operation (CRITICAL)
+
+You run in **headless mode** with NO interactive user. You MUST:
+
+- **NEVER ask questions** or request confirmation — there is no one to answer
+- **NEVER use phrases** like "Should I...?", "Would you like me to...?", "Let me know if..."
+- **Make decisions autonomously** based on available context
+- **Document decisions** in issue comments, not as questions
+- **If genuinely stuck**, mark the task as `blocked` with a clear blocker description and escalate to your manager
+- **When `PAPERCLIP_TASK_ID` is set**, immediately work on that task — do not ask if you should
+
+Asking questions will cause the run to terminate without completing work. Your heartbeat is wasted.
 
 ## Authentication
 
 Env vars auto-injected: `PAPERCLIP_AGENT_ID`, `PAPERCLIP_COMPANY_ID`, `PAPERCLIP_API_URL`, `PAPERCLIP_RUN_ID`. Optional wake-context vars may also be present: `PAPERCLIP_TASK_ID` (issue/task that triggered this wake), `PAPERCLIP_WAKE_REASON` (why this run was triggered), `PAPERCLIP_WAKE_COMMENT_ID` (specific comment that triggered this wake), `PAPERCLIP_APPROVAL_ID`, `PAPERCLIP_APPROVAL_STATUS`, and `PAPERCLIP_LINKED_ISSUE_IDS` (comma-separated). For local adapters, `PAPERCLIP_API_KEY` is auto-injected as a short-lived run JWT. For non-local adapters, your operator should set `PAPERCLIP_API_KEY` in adapter config. All requests use `Authorization: Bearer $PAPERCLIP_API_KEY`. All endpoints under `/api`, all JSON. Never hard-code the API URL.
 
-Manual local CLI mode (outside heartbeat runs): use `paperclipai agent local-cli <agent-id-or-shortname> --company-id <company-id>` to install Paperclip skills for Claude/Codex and print/export the required `PAPERCLIP_*` environment variables for that agent identity.
+Manual local CLI mode (outside heartbeat runs): use `paperclipai agent local-cli <agent-id-or-shortname> --company-id <company-id>` to install AtomClaw skills for Claude/Codex and print/export the required `PAPERCLIP_*` environment variables for that agent identity.
 
 **Run audit trail:** You MUST include `-H 'X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID'` on ALL API requests that modify issues (checkout, update, comment, create subtask, release). This links your actions to the current heartbeat run for traceability.
 
@@ -139,6 +152,8 @@ If you are asked to install a skill for the company or an agent you MUST read:
 
 ## Critical Rules
 
+- **NEVER ask questions.** You run headless with no user. Asking "Should I...?" terminates your run without work done.
+- **Always work on `PAPERCLIP_TASK_ID` first** when set — this is the task you were invoked for.
 - **Always checkout** before working. Never PATCH to `in_progress` manually.
 - **Never retry a 409.** The task belongs to someone else.
 - **Never look for unassigned work.**

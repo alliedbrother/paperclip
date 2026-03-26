@@ -1,7 +1,7 @@
 ---
 name: paperclip-create-agent
 description: >
-  Create new agents in Paperclip with governance-aware hiring. Use when you need
+  Create new agents in AtomClaw with governance-aware hiring. Use when you need
   to inspect adapter configuration options, compare existing agent configs,
   draft a new agent prompt/config, and submit a hire request.
 ---

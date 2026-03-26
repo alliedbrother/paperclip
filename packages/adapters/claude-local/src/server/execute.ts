@@ -234,6 +234,13 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
     env.PAPERCLIP_API_KEY = authToken;
   }
 
+  // Inject ATOMCLAW_* aliases for all PAPERCLIP_* env vars (AtomClaw branding)
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("PAPERCLIP_")) {
+      env[key.replace("PAPERCLIP_", "ATOMCLAW_")] = env[key];
+    }
+  }
+
   const runtimeEnv = ensurePathInEnv({ ...process.env, ...env });
   await ensureCommandResolvable(command, cwd, runtimeEnv);
 
@@ -352,11 +359,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       const combinedPath = path.join(skillsDir, "agent-instructions.md");
       await fs.writeFile(combinedPath, instructionsContent + pathDirective, "utf-8");
       effectiveInstructionsFilePath = combinedPath;
+      await onLog("stderr", `[paperclip] Loaded agent instructions file: ${instructionsFilePath}\n`);
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       await onLog(
         "stderr",
-        `[paperclip] Warning: could not read agent instructions file "${instructionsFilePath}": ${reason}\n`,
+        `[atomclaw] Warning: could not read agent instructions file "${instructionsFilePath}": ${reason}\n`,
       );
       effectiveInstructionsFilePath = undefined;
     }
@@ -372,7 +380,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (runtimeSessionId && !canResumeSession) {
     await onLog(
       "stdout",
-      `[paperclip] Claude session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${cwd}".\n`,
+      `[atomclaw] Claude session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${cwd}".\n`,
     );
   }
   const bootstrapPromptTemplate = asString(config.bootstrapPromptTemplate, "");
@@ -402,6 +410,33 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     sessionHandoffChars: sessionHandoffNote.length,
     heartbeatPromptChars: renderedPrompt.length,
   };
+
+  // Append wake context so the agent sees why it was woken, even on --resume
+  const wakeContextParts: string[] = [];
+  const ctxWakeCommentId =
+    (typeof context.wakeCommentId === "string" && context.wakeCommentId.trim()) ||
+    (typeof context.commentId === "string" && context.commentId.trim()) ||
+    null;
+  const ctxWakeTaskId =
+    (typeof context.taskId === "string" && context.taskId.trim()) ||
+    (typeof context.issueId === "string" && context.issueId.trim()) ||
+    null;
+  if (ctxWakeCommentId && typeof context.wakeCommentBody === "string" && context.wakeCommentBody.trim()) {
+    const authorLabel = context.wakeCommentAuthorType === "user" ? "a board user" : "another agent";
+    wakeContextParts.push(
+      `\n\n---\n**Wake context:** You were woken because ${authorLabel} posted a new comment (id: ${ctxWakeCommentId}) on your assigned task (${ctxWakeTaskId ?? "unknown"}).`,
+      `\n**Comment:**\n> ${context.wakeCommentBody.trim().replace(/\n/g, "\n> ")}`,
+      `\nYou MUST read and respond to this comment. Follow the Heartbeat Procedure starting from Step 5 (checkout). Do NOT skip this comment.`,
+    );
+  } else if (typeof context.wakeReason === "string" && context.wakeReason.trim()) {
+    wakeContextParts.push(
+      `\n\n---\n**Wake context:** You were woken with reason: ${context.wakeReason}. Task: ${ctxWakeTaskId ?? "none"}.`,
+      `\nFollow the Heartbeat Procedure. Check for new comments on your assigned tasks.`,
+    );
+  }
+  const finalPrompt = wakeContextParts.length > 0
+    ? prompt + wakeContextParts.join("")
+    : prompt;
 
   const buildClaudeArgs = (resumeSessionId: string | null) => {
     const args = ["--print", "-", "--output-format", "stream-json", "--verbose"];
@@ -445,7 +480,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         commandArgs: args,
         commandNotes,
         env: redactEnvForLogs(env),
-        prompt,
+        prompt: finalPrompt,
         promptMetrics,
         context,
       });
@@ -454,7 +489,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const proc = await runChildProcess(runId, command, args, {
       cwd,
       env,
-      stdin: prompt,
+      stdin: finalPrompt,
       timeoutSec,
       graceSec,
       onSpawn,
@@ -576,7 +611,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     ) {
       await onLog(
         "stdout",
-        `[paperclip] Claude resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
+        `[atomclaw] Claude resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
       );
       const retry = await runAttempt(null);
       return toAdapterResult(retry, { fallbackSessionId: null, clearSessionOnMissingSession: true });

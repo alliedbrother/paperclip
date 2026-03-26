@@ -36,6 +36,7 @@ const SUPPORTED_ADVANCED_ADAPTER_TYPES = new Set<CreateConfigValues["adapterType
   "pi_local",
   "cursor",
   "openclaw_gateway",
+  "human",
 ]);
 
 function createValuesForAdapterType(
@@ -177,6 +178,7 @@ export function NewAgent() {
         return;
       }
     }
+    const isHuman = configValues.adapterType === "human";
     createAgent.mutate({
       name: name.trim(),
       role: effectiveRole,
@@ -187,11 +189,11 @@ export function NewAgent() {
       adapterConfig: buildAdapterConfig(),
       runtimeConfig: {
         heartbeat: {
-          enabled: configValues.heartbeatEnabled,
-          intervalSec: configValues.intervalSec,
-          wakeOnDemand: true,
+          enabled: isHuman ? false : configValues.heartbeatEnabled,
+          intervalSec: isHuman ? 0 : configValues.intervalSec,
+          wakeOnDemand: !isHuman,
           cooldownSec: 10,
-          maxConcurrentRuns: 1,
+          maxConcurrentRuns: isHuman ? 0 : 1,
         },
       },
       budgetMonthlyCents: 0,
