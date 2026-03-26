@@ -20,9 +20,6 @@ import {
 } from "@/components/ui/collapsible";
 import type { Agent } from "@paperclipai/shared";
 
-/** Tabs that are agent-specific and should NOT carry over when switching agents. */
-const AGENT_SPECIFIC_TABS = new Set(["team", "issues", "budget", "configuration", "instructions", "skills"]);
-
 function defaultAgentTab(agent: Agent): string {
   return agent.adapterType === "human" ? "issues" : "dashboard";
 }
@@ -86,10 +83,6 @@ export function SidebarAgents() {
   const activeTab = agentMatch?.[2] ?? null;
 
   function agentNavUrl(agent: Agent): string {
-    // Only carry over generic tabs (dashboard, runs) — reset to default for agent-specific tabs
-    if (activeTab && !AGENT_SPECIFIC_TABS.has(activeTab)) {
-      return `${agentUrl(agent)}/${activeTab}`;
-    }
     return `${agentUrl(agent)}/${defaultAgentTab(agent)}`;
   }
 
