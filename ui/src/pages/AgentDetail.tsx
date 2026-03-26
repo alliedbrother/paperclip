@@ -75,7 +75,6 @@ import {
   MessageSquare,
   ExternalLink,
   DollarSign,
-  Users,
 } from "lucide-react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -670,23 +669,25 @@ export function AgentDetail() {
       return;
     }
     const canonicalTab =
-      activeView === "instructions"
-        ? "instructions"
-        : activeView === "configuration"
-          ? "configuration"
-          : activeView === "skills"
-            ? "skills"
-            : activeView === "runs"
-              ? "runs"
-              : activeView === "budget"
-                ? "budget"
-              : activeView === "issues"
-                ? "issues"
-              : activeView === "team"
-                ? "team"
-              : agent?.adapterType === "human"
-                ? "issues"
-              : "dashboard";
+      activeView === "dashboard"
+        ? "dashboard"
+        : activeView === "instructions"
+          ? "instructions"
+          : activeView === "configuration"
+            ? "configuration"
+            : activeView === "skills"
+              ? "skills"
+              : activeView === "runs"
+                ? "runs"
+                : activeView === "budget"
+                  ? "budget"
+                : activeView === "issues"
+                  ? "issues"
+                : activeView === "team"
+                  ? "team"
+                : agent?.adapterType === "human"
+                  ? "issues"
+                : "dashboard";
     if (routeAgentRef !== canonicalAgentRef || urlTab !== canonicalTab) {
       navigate(`/agents/${canonicalAgentRef}/${canonicalTab}`, { replace: true });
       return;
@@ -1113,56 +1114,13 @@ export function AgentDetail() {
       ) : null}
 
       {activeView === "team" && isManager && (
-        <div className="max-w-4xl space-y-1">
-          {directReports.map((report) => {
-            const reportDirects = (allAgents ?? []).filter(
-              (a) => a.reportsTo === report.id && a.status !== "terminated",
-            );
-            const reportRoleLevel = !agent.reportsTo
-              ? "Executive"
-              : reportDirects.length > 0
-                ? "Manager"
-                : "Individual Contributor";
-            return (
-              <Link
-                key={report.id}
-                to={`/agents/${agentRouteRef(report)}/dashboard`}
-                className="flex items-center gap-3 rounded-lg border border-border px-4 py-3 hover:bg-accent/50 transition-colors no-underline"
-              >
-                <div className="shrink-0 flex items-center justify-center h-9 w-9 rounded-lg bg-accent">
-                  <AgentIcon icon={report.icon} adapterType={report.adapterType} className="h-5 w-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm truncate">{report.name}</span>
-                    {report.adapterType === "human" && (
-                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-medium">
-                        <User className="h-2.5 w-2.5" /> Human
-                      </span>
-                    )}
-                    <span className={cn(
-                      "px-1.5 py-0.5 rounded text-[10px] font-medium",
-                      reportRoleLevel === "Executive" ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" :
-                      reportRoleLevel === "Manager" ? "bg-purple-500/10 text-purple-600 dark:text-purple-400" :
-                      "bg-neutral-500/10 text-neutral-500"
-                    )}>
-                      {reportRoleLevel}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {report.title ?? (roleLabels[report.role] ?? report.role)}
-                    {reportDirects.length > 0 && ` \u00b7 ${reportDirects.length} direct report${reportDirects.length > 1 ? "s" : ""}`}
-                  </p>
-                </div>
-                <div className="shrink-0 flex items-center gap-3">
-                  <span className="text-xs text-muted-foreground">
-                    {formatCents(report.spentMonthlyCents)} / {formatCents(report.budgetMonthlyCents)}
-                  </span>
-                  <StatusBadge status={report.status} />
-                </div>
-              </Link>
-            );
-          })}
+        <div className="max-w-4xl">
+          <TeamTree
+            agents={allAgents ?? []}
+            roots={directReports}
+            parentAgent={agent}
+            depth={0}
+          />
         </div>
       )}
 
@@ -1172,6 +1130,112 @@ export function AgentDetail() {
           companyId={resolvedCompanyId}
           agentName={agent.name}
         />
+      )}
+    </div>
+  );
+}
+
+/* ---- Team Tree ---- */
+
+function TeamTree({
+  agents,
+  roots,
+  parentAgent,
+  depth,
+}: {
+  agents: Agent[];
+  roots: Agent[];
+  parentAgent: Agent | null;
+  depth: number;
+}) {
+  return (
+    <div className={cn("space-y-1", depth > 0 && "ml-6 border-l border-border/50 pl-3")}>
+      {roots.map((node) => (
+        <TeamTreeNode
+          key={node.id}
+          agent={node}
+          allAgents={agents}
+          parentAgent={parentAgent}
+          depth={depth}
+        />
+      ))}
+    </div>
+  );
+}
+
+function TeamTreeNode({
+  agent: node,
+  allAgents,
+  parentAgent,
+  depth,
+}: {
+  agent: Agent;
+  allAgents: Agent[];
+  parentAgent: Agent | null;
+  depth: number;
+}) {
+  const [expanded, setExpanded] = useState(depth < 1);
+  const children = allAgents.filter((a) => a.reportsTo === node.id && a.status !== "terminated");
+  const hasChildren = children.length > 0;
+  const level = !parentAgent?.reportsTo
+    ? "Executive"
+    : hasChildren
+      ? "Manager"
+      : "Individual Contributor";
+
+  return (
+    <div>
+      <div className="flex items-center gap-1">
+        {hasChildren ? (
+          <button
+            type="button"
+            className="shrink-0 p-0.5 rounded hover:bg-accent/50 text-muted-foreground"
+            onClick={() => setExpanded(!expanded)}
+          >
+            <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-90")} />
+          </button>
+        ) : (
+          <span className="w-[18px] shrink-0" />
+        )}
+        <Link
+          to={`/agents/${agentRouteRef(node)}/dashboard`}
+          className="flex-1 flex items-center gap-3 rounded-lg border border-border px-3 py-2.5 hover:bg-accent/50 transition-colors no-underline"
+        >
+          <div className="shrink-0 flex items-center justify-center h-8 w-8 rounded-lg bg-accent">
+            <AgentIcon icon={node.icon} adapterType={node.adapterType} className="h-4 w-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-sm truncate">{node.name}</span>
+              {node.adapterType === "human" && (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-medium">
+                  <User className="h-2.5 w-2.5" /> Human
+                </span>
+              )}
+              <span className={cn(
+                "px-1.5 py-0.5 rounded text-[10px] font-medium",
+                level === "Executive" ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" :
+                level === "Manager" ? "bg-purple-500/10 text-purple-600 dark:text-purple-400" :
+                "bg-neutral-500/10 text-neutral-500"
+              )}>
+                {level}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground truncate">
+              {node.title ?? (roleLabels[node.role] ?? node.role)}
+              {hasChildren && ` \u00b7 ${children.length} direct report${children.length > 1 ? "s" : ""}`}
+            </p>
+          </div>
+          <div className="shrink-0 flex items-center gap-3">
+            <span className="text-xs text-muted-foreground">
+              {formatCents(node.spentMonthlyCents)} / {formatCents(node.budgetMonthlyCents)}
+            </span>
+            <StatusBadge status={node.status} />
+          </div>
+        </Link>
+      </div>
+      {hasChildren && expanded && (
+        <TeamTree agents={allAgents} roots={children} parentAgent={node} depth={depth + 1} />
       )}
     </div>
   );
