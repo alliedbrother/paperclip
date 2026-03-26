@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { NavLink, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, Plus, Search } from "lucide-react";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useSidebar } from "../context/SidebarContext";
@@ -19,8 +19,17 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import type { Agent } from "@paperclipai/shared";
+
+/** Tabs that are agent-specific and should NOT carry over when switching agents. */
+const AGENT_SPECIFIC_TABS = new Set(["team", "issues", "budget", "configuration", "instructions", "skills"]);
+
+function defaultAgentTab(agent: Agent): string {
+  return agent.adapterType === "human" ? "issues" : "dashboard";
+}
+
 export function SidebarAgents() {
   const [open, setOpen] = useState(true);
+  const [search, setSearch] = useState("");
   const { selectedCompanyId } = useCompany();
   const { openNewAgent } = useDialog();
   const { isMobile, setSidebarOpen } = useSidebar();
@@ -64,10 +73,25 @@ export function SidebarAgents() {
     userId: currentUserId,
   });
 
+  const filteredAgents = useMemo(() => {
+    if (!search.trim()) return orderedAgents;
+    const q = search.toLowerCase();
+    return orderedAgents.filter((a: Agent) =>
+      a.name.toLowerCase().includes(q) || (a.title ?? "").toLowerCase().includes(q)
+    );
+  }, [orderedAgents, search]);
+
   const agentMatch = location.pathname.match(/^\/(?:[^/]+\/)?agents\/([^/]+)(?:\/([^/]+))?/);
   const activeAgentId = agentMatch?.[1] ?? null;
   const activeTab = agentMatch?.[2] ?? null;
 
+  function agentNavUrl(agent: Agent): string {
+    // Only carry over generic tabs (dashboard, runs) — reset to default for agent-specific tabs
+    if (activeTab && !AGENT_SPECIFIC_TABS.has(activeTab)) {
+      return `${agentUrl(agent)}/${activeTab}`;
+    }
+    return `${agentUrl(agent)}/${defaultAgentTab(agent)}`;
+  }
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -98,13 +122,25 @@ export function SidebarAgents() {
       </div>
 
       <CollapsibleContent>
-        <div className="flex flex-col gap-0.5 mt-0.5">
-          {orderedAgents.map((agent: Agent) => {
+        <div className="px-3 pb-1.5">
+          <div className="flex items-center gap-1.5 rounded-md border border-border/50 bg-accent/30 px-2 py-1">
+            <Search className="h-3 w-3 text-muted-foreground/60 shrink-0" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search agents..."
+              className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/50 outline-none min-w-0"
+            />
+          </div>
+        </div>
+        <div className="flex flex-col gap-0.5 mt-0.5 max-h-[45vh] overflow-y-auto">
+          {filteredAgents.map((agent: Agent) => {
             const runCount = liveCountByAgent.get(agent.id) ?? 0;
             return (
               <NavLink
                 key={agent.id}
-                to={activeTab ? `${agentUrl(agent)}/${activeTab}` : agentUrl(agent)}
+                to={agentNavUrl(agent)}
                 onClick={() => {
                   if (isMobile) setSidebarOpen(false);
                 }}

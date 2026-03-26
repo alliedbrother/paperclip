@@ -1198,7 +1198,7 @@ function TeamTreeNode({
           <span className="w-[18px] shrink-0" />
         )}
         <Link
-          to={`/agents/${agentRouteRef(node)}/dashboard`}
+          to={`/agents/${agentRouteRef(node)}/${node.adapterType === "human" ? "issues" : "dashboard"}`}
           className="flex-1 flex items-center gap-3 rounded-lg border border-border px-3 py-2.5 hover:bg-accent/50 transition-colors no-underline"
         >
           <div className="shrink-0 flex items-center justify-center h-8 w-8 rounded-lg bg-accent">
