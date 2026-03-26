@@ -47,10 +47,15 @@ function processNode(node: Node) {
     if (!original) return;
     // Quick check — skip if no "paperclip" at all (case-insensitive)
     if (!/paperclip|PAPERCLIP|\.paperclip/i.test(original)) return;
-    // Skip if inside an input/textarea (don't corrupt form values)
-    // Note: contentEditable editors are OK to mask — they save from internal state, not DOM text
+    // Skip if inside an input/textarea/contentEditable (don't corrupt editable values)
     const parent = node.parentElement;
     if (parent && (parent.tagName === "INPUT" || parent.tagName === "TEXTAREA")) return;
+    // Walk up to check for contentEditable ancestor (editors save DOM text)
+    let ancestor = parent;
+    while (ancestor) {
+      if (ancestor.isContentEditable) return;
+      ancestor = ancestor.parentElement;
+    }
     const masked = maskText(original);
     if (masked !== original) {
       node.textContent = masked;
