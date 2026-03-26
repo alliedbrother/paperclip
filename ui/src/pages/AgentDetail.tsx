@@ -2928,6 +2928,7 @@ function AgentSkillsTab({
     : hasUnsavedChanges
       ? "Saving soon..."
       : null;
+  const [skillSearch, setSkillSearch] = useState("");
 
   return (
     <div className="max-w-4xl space-y-5">
@@ -2945,6 +2946,14 @@ function AgentSkillsTab({
           </div>
         ) : null}
       </div>
+
+      <Input
+        type="text"
+        placeholder="Search skills..."
+        value={skillSearch}
+        onChange={(e) => setSkillSearch(e.target.value)}
+        className="h-8 text-sm"
+      />
 
       {skillSnapshot?.warnings.length ? (
         <div className="space-y-1 rounded-xl border border-amber-300/60 bg-amber-50/60 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-amber-200">
@@ -3056,7 +3065,16 @@ function AgentSkillsTab({
               );
             };
 
-            if (optionalSkillRows.length === 0 && requiredSkillRows.length === 0 && unmanagedSkillRows.length === 0) {
+            const searchLower = skillSearch.toLowerCase();
+            const matchesSearch = (skill: SkillRow) =>
+              !searchLower ||
+              skill.name.toLowerCase().includes(searchLower) ||
+              (skill.description ?? "").toLowerCase().includes(searchLower);
+            const filteredOptional = optionalSkillRows.filter(matchesSearch);
+            const filteredRequired = requiredSkillRows.filter(matchesSearch);
+            const filteredUnmanaged = unmanagedSkillRows.filter(matchesSearch);
+
+            if (filteredOptional.length === 0 && filteredRequired.length === 0 && filteredUnmanaged.length === 0 && !skillSearch) {
               return (
                 <section className="border-y border-border">
                   <div className="px-3 py-6 text-sm text-muted-foreground">
@@ -3068,31 +3086,35 @@ function AgentSkillsTab({
 
             return (
               <>
-                {optionalSkillRows.length > 0 && (
+                {skillSearch && filteredOptional.length === 0 && filteredRequired.length === 0 && filteredUnmanaged.length === 0 && (
+                  <p className="text-sm text-muted-foreground py-4 text-center">No skills matching "{skillSearch}"</p>
+                )}
+
+                {filteredOptional.length > 0 && (
                   <section className="border-y border-border">
-                    {optionalSkillRows.map(renderSkillRow)}
+                    {filteredOptional.map(renderSkillRow)}
                   </section>
                 )}
 
-                {requiredSkillRows.length > 0 && (
+                {filteredRequired.length > 0 && (
                   <section className="border-y border-border">
                     <div className="border-b border-border bg-muted/40 px-3 py-2">
                       <span className="text-xs font-medium text-muted-foreground">
                         Required by Paperclip
                       </span>
                     </div>
-                    {requiredSkillRows.map(renderSkillRow)}
+                    {filteredRequired.map(renderSkillRow)}
                   </section>
                 )}
 
-                {unmanagedSkillRows.length > 0 && (
+                {filteredUnmanaged.length > 0 && (
                   <section className="border-y border-border">
                     <div className="border-b border-border bg-muted/40 px-3 py-2">
                       <span className="text-xs font-medium text-muted-foreground">
                         User-installed skills, not managed by Paperclip
                       </span>
                     </div>
-                    {unmanagedSkillRows.map(renderSkillRow)}
+                    {filteredUnmanaged.map(renderSkillRow)}
                   </section>
                 )}
               </>
