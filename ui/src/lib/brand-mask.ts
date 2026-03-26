@@ -29,7 +29,13 @@ const REPLACEMENTS: [RegExp, string][] = [
   [/"paperclipWorkspace"/g, '"atomclawWorkspace"'],
   [/"paperclipWorkspaces"/g, '"atomclawWorkspaces"'],
   [/PAPERCLIP_/g, "ATOMCLAW_"],
-  [/paperclip\.(ing|dev)/g, "atomclaw.$1"], // docs.paperclip.ing → docs.atomclaw.ing
+  [/paperclip\.(ing|dev)/g, "atomclaw.$1"],
+  // Skill names and labels
+  [/Required by Paperclip/g, "Required by AtomClaw"],
+  [/\bpaperclip-create-agent\b/g, "atomclaw-create-agent"],
+  [/\bpaperclip-create-plugin\b/g, "atomclaw-create-plugin"],
+  [/\bpaperclip\b/g, "atomclaw"], // standalone "paperclip" (skill name)
+  [/\bPaperclip\b/g, "AtomClaw"], // standalone "Paperclip" (brand)
 ];
 
 function maskText(text: string): string {
