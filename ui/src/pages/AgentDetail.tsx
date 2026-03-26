@@ -865,7 +865,7 @@ export function AgentDetail() {
                   "ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium",
                   roleLevel === "Executive" ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" :
                   roleLevel === "Manager" ? "bg-purple-500/10 text-purple-600 dark:text-purple-400" :
-                  "bg-neutral-500/10 text-neutral-500"
+                  "bg-sky-500/10 text-sky-600 dark:text-sky-400"
                 )}>
                   {roleLevel}
                 </span>
@@ -1216,7 +1216,7 @@ function TeamTreeNode({
                 "px-1.5 py-0.5 rounded text-[10px] font-medium",
                 level === "Executive" ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" :
                 level === "Manager" ? "bg-purple-500/10 text-purple-600 dark:text-purple-400" :
-                "bg-neutral-500/10 text-neutral-500"
+                "bg-sky-500/10 text-sky-600 dark:text-sky-400"
               )}>
                 {level}
               </span>
