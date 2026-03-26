@@ -75,6 +75,7 @@ import {
   MessageSquare,
   ExternalLink,
   DollarSign,
+  Users,
 } from "lucide-react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -235,7 +236,7 @@ function scrollToContainerBottom(container: ScrollContainer, behavior: ScrollBeh
   container.scrollTo({ top: container.scrollHeight, behavior });
 }
 
-type AgentDetailView = "dashboard" | "instructions" | "configuration" | "skills" | "runs" | "budget" | "issues";
+type AgentDetailView = "dashboard" | "instructions" | "configuration" | "skills" | "runs" | "budget" | "issues" | "team";
 
 function parseAgentDetailView(value: string | null): AgentDetailView {
   if (value === "instructions" || value === "prompts") return "instructions";
@@ -244,6 +245,7 @@ function parseAgentDetailView(value: string | null): AgentDetailView {
   if (value === "budget") return "budget";
   if (value === "runs") return value;
   if (value === "issues") return "issues";
+  if (value === "team") return "team";
   return "dashboard";
 }
 
@@ -595,7 +597,7 @@ export function AgentDetail() {
   const { data: allAgents } = useQuery({
     queryKey: queryKeys.agents.list(resolvedCompanyId!),
     queryFn: () => agentsApi.list(resolvedCompanyId!),
-    enabled: !!resolvedCompanyId && needsDashboardData,
+    enabled: !!resolvedCompanyId,
   });
 
   const { data: budgetOverview } = useQuery({
@@ -610,6 +612,19 @@ export function AgentDetail() {
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   const reportsToAgent = (allAgents ?? []).find((a) => a.id === agent?.reportsTo);
   const directReports = (allAgents ?? []).filter((a) => a.reportsTo === agent?.id && a.status !== "terminated");
+  const isManager = directReports.length > 0;
+
+  const roleLevel = useMemo(() => {
+    if (!agent) return null;
+    // CEO — no parent
+    if (!agent.reportsTo) return "Executive";
+    // One level below CEO (C-suite: CFO, CIO, CMO, CRO)
+    if (reportsToAgent && !reportsToAgent.reportsTo) return "Executive";
+    // Has direct reports → Manager
+    if (isManager) return "Manager";
+    return "Individual Contributor";
+  }, [agent, reportsToAgent, isManager]);
+
   const agentBudgetSummary = useMemo(() => {
     const matched = budgetOverview?.policies.find(
       (policy) => policy.scopeType === "agent" && policy.scopeId === (agent?.id ?? routeAgentRef),
@@ -792,6 +807,8 @@ export function AgentDetail() {
         crumbs.push({ label: "Runs" });
       } else if (activeView === "budget") {
         crumbs.push({ label: "Budget" });
+      } else if (activeView === "team") {
+        crumbs.push({ label: "Team Managed" });
       } else {
         crumbs.push({ label: "Dashboard" });
       }
@@ -840,6 +857,16 @@ export function AgentDetail() {
             <p className="text-sm text-muted-foreground truncate">
               {roleLabels[agent.role] ?? agent.role}
               {agent.title ? ` - ${agent.title}` : ""}
+              {roleLevel && (
+                <span className={cn(
+                  "ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium",
+                  roleLevel === "Executive" ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" :
+                  roleLevel === "Manager" ? "bg-purple-500/10 text-purple-600 dark:text-purple-400" :
+                  "bg-neutral-500/10 text-neutral-500"
+                )}>
+                  {roleLevel}
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -939,6 +966,7 @@ export function AgentDetail() {
             items={agent.adapterType === "human" ? [
               { value: "issues", label: "Issues" },
               { value: "dashboard", label: "Dashboard" },
+              ...(isManager ? [{ value: "team", label: "Team Managed" }] : []),
             ] : [
               { value: "dashboard", label: "Dashboard" },
               { value: "instructions", label: "Instructions" },
@@ -946,6 +974,7 @@ export function AgentDetail() {
               { value: "configuration", label: "Configuration" },
               { value: "runs", label: "Runs" },
               { value: "budget", label: "Budget" },
+              ...(isManager ? [{ value: "team", label: "Team Managed" }] : []),
             ]}
             value={activeView}
             onValueChange={(value) => navigate(`/agents/${canonicalAgentRef}/${value}`)}
@@ -1080,6 +1109,60 @@ export function AgentDetail() {
           />
         </div>
       ) : null}
+
+      {activeView === "team" && isManager && (
+        <div className="max-w-4xl space-y-1">
+          {directReports.map((report) => {
+            const reportDirects = (allAgents ?? []).filter(
+              (a) => a.reportsTo === report.id && a.status !== "terminated",
+            );
+            const reportRoleLevel = !agent.reportsTo
+              ? "Executive"
+              : reportDirects.length > 0
+                ? "Manager"
+                : "Individual Contributor";
+            return (
+              <Link
+                key={report.id}
+                to={`/agents/${agentRouteRef(report)}/dashboard`}
+                className="flex items-center gap-3 rounded-lg border border-border px-4 py-3 hover:bg-accent/50 transition-colors no-underline"
+              >
+                <div className="shrink-0 flex items-center justify-center h-9 w-9 rounded-lg bg-accent">
+                  <AgentIcon icon={report.icon} adapterType={report.adapterType} className="h-5 w-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm truncate">{report.name}</span>
+                    {report.adapterType === "human" && (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-medium">
+                        <User className="h-2.5 w-2.5" /> Human
+                      </span>
+                    )}
+                    <span className={cn(
+                      "px-1.5 py-0.5 rounded text-[10px] font-medium",
+                      reportRoleLevel === "Executive" ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" :
+                      reportRoleLevel === "Manager" ? "bg-purple-500/10 text-purple-600 dark:text-purple-400" :
+                      "bg-neutral-500/10 text-neutral-500"
+                    )}>
+                      {reportRoleLevel}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {report.title ?? (roleLabels[report.role] ?? report.role)}
+                    {reportDirects.length > 0 && ` \u00b7 ${reportDirects.length} direct report${reportDirects.length > 1 ? "s" : ""}`}
+                  </p>
+                </div>
+                <div className="shrink-0 flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground">
+                    {formatCents(report.spentMonthlyCents)} / {formatCents(report.budgetMonthlyCents)}
+                  </span>
+                  <StatusBadge status={report.status} />
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
 
       {activeView === "issues" && agent.adapterType === "human" && resolvedCompanyId && (
         <HumanIssuesTab
