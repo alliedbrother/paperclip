@@ -234,6 +234,13 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
     env.PAPERCLIP_API_KEY = authToken;
   }
 
+  // Inject ATOMCLAW_* aliases for all PAPERCLIP_* env vars (AtomClaw branding)
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("PAPERCLIP_")) {
+      env[key.replace("PAPERCLIP_", "ATOMCLAW_")] = env[key];
+    }
+  }
+
   const runtimeEnv = ensurePathInEnv({ ...process.env, ...env });
   await ensureCommandResolvable(command, cwd, runtimeEnv);
 
