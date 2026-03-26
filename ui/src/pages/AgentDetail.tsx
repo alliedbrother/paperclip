@@ -682,6 +682,8 @@ export function AgentDetail() {
                 ? "budget"
               : activeView === "issues"
                 ? "issues"
+              : activeView === "team"
+                ? "team"
               : agent?.adapterType === "human"
                 ? "issues"
               : "dashboard";
