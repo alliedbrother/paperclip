@@ -589,7 +589,7 @@ export function AgentDetail() {
 
   const { data: allIssues } = useQuery({
     queryKey: [...queryKeys.issues.list(resolvedCompanyId!), "participant-agent", resolvedAgentId ?? "__none__"],
-    queryFn: () => issuesApi.list(resolvedCompanyId!, { participantAgentId: resolvedAgentId! }),
+    queryFn: () => issuesApi.list(resolvedCompanyId!, { participantAgentId: resolvedAgentId!, includeRoutineExecutions: true }),
     enabled: !!resolvedCompanyId && !!resolvedAgentId && needsDashboardData,
   });
 
