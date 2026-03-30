@@ -374,29 +374,30 @@ export function IssuesList({
               aria-label="Search issues"
             />
           </div>
-          <div className="hidden sm:flex items-center gap-1">
+          <div className="hidden sm:flex items-center gap-1.5">
+            <span className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Handled by</span>
             <button
               className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium transition-colors border",
+                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors border",
                 viewState.assigneeType.includes("ai")
                   ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30"
                   : "text-muted-foreground border-border hover:bg-accent/50"
               )}
               onClick={() => updateView({ assigneeType: viewState.assigneeType.includes("ai") ? viewState.assigneeType.filter((t) => t !== "ai") : [...viewState.assigneeType, "ai"] })}
             >
-              <Bot className="h-3 w-3" />
+              <Bot className="h-3.5 w-3.5" />
               AI
             </button>
             <button
               className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium transition-colors border",
+                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors border",
                 viewState.assigneeType.includes("human")
                   ? "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30"
                   : "text-muted-foreground border-border hover:bg-accent/50"
               )}
               onClick={() => updateView({ assigneeType: viewState.assigneeType.includes("human") ? viewState.assigneeType.filter((t) => t !== "human") : [...viewState.assigneeType, "human"] })}
             >
-              <User className="h-3 w-3" />
+              <User className="h-3.5 w-3.5" />
               Human
             </button>
           </div>
@@ -867,16 +868,16 @@ export function IssuesList({
                           >
                             {issue.assigneeAgentId && agentName(issue.assigneeAgentId) ? (
                               <span className="inline-flex items-center gap-1.5">
-                                <Identity name={agentName(issue.assigneeAgentId)!} size="sm" />
                                 {agents?.find((a) => a.id === issue.assigneeAgentId)?.adapterType === "human" ? (
-                                  <span className="inline-flex items-center rounded px-1 py-0.5 bg-sky-500/10" title="Human agent">
-                                    <User className="h-2.5 w-2.5 text-sky-500" />
+                                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500/15" title="Handled by Human">
+                                    <User className="h-3 w-3 text-sky-500" />
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center rounded px-1 py-0.5 bg-purple-500/10" title="AI agent">
-                                    <Bot className="h-2.5 w-2.5 text-purple-500" />
+                                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-purple-500/15" title="Handled by AI">
+                                    <Bot className="h-3 w-3 text-purple-500" />
                                   </span>
                                 )}
+                                <Identity name={agentName(issue.assigneeAgentId)!} size="sm" />
                               </span>
                             ) : issue.assigneeUserId ? (
                               <span className="inline-flex items-center gap-1.5 text-xs">
