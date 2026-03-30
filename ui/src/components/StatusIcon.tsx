@@ -30,6 +30,7 @@ export function StatusIcon({ status, onChange, className, showLabel }: StatusIco
         onChange && !showLabel && "cursor-pointer",
         className
       )}
+      title={statusLabel(status)}
     >
       {isDone && (
         <span className="absolute inset-0 m-auto h-2 w-2 rounded-full bg-current" />

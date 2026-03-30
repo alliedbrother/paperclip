@@ -861,6 +861,7 @@ export function IssuesList({
                         <PopoverTrigger asChild>
                           <button
                             className="flex w-[140px] shrink-0 items-center truncate rounded-md px-2 py-1 transition-colors hover:bg-accent/50"
+                            title={agentName(issue.assigneeAgentId) ?? undefined}
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
