@@ -19,7 +19,7 @@ interface StatusIconProps {
 }
 
 export function StatusIcon({ status, onChange, className, showLabel }: StatusIconProps) {
-  const [open, setOpen] = useState(false);
+  const [popoverOpen, setPopoverOpen] = useState(false);
   const colorClass = issueStatusIcon[status] ?? issueStatusIconDefault;
   const isDone = status === "done";
 
@@ -51,39 +51,67 @@ export function StatusIcon({ status, onChange, className, showLabel }: StatusIco
     );
   }
 
-  // With onChange — wrap in Popover, but show tooltip when popover is closed
-  const trigger = showLabel ? (
-    <button className="inline-flex items-center gap-1.5 cursor-pointer hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 transition-colors">
-      {circle}
-      <span className="text-sm">{statusLabel(status)}</span>
-    </button>
-  ) : (
-    <Tooltip>
-      <TooltipTrigger asChild>{circle}</TooltipTrigger>
-      {!open && <TooltipContent side="top" className="text-xs">{statusLabel(status)}</TooltipContent>}
-    </Tooltip>
-  );
+  // With onChange + showLabel — no tooltip needed, label is visible
+  if (showLabel) {
+    const trigger = (
+      <button className="inline-flex items-center gap-1.5 cursor-pointer hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 transition-colors">
+        {circle}
+        <span className="text-sm">{statusLabel(status)}</span>
+      </button>
+    );
 
+    return (
+      <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+        <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+        <PopoverContent className="w-40 p-1" align="start">
+          {allStatuses.map((s) => (
+            <Button
+              key={s}
+              variant="ghost"
+              size="sm"
+              className={cn("w-full justify-start gap-2 text-xs", s === status && "bg-accent")}
+              onClick={() => {
+                onChange(s);
+                setPopoverOpen(false);
+              }}
+            >
+              <StatusIcon status={s} />
+              {statusLabel(s)}
+            </Button>
+          ))}
+        </PopoverContent>
+      </Popover>
+    );
+  }
+
+  // With onChange, no showLabel — tooltip on hover, popover on click
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent className="w-40 p-1" align="start">
-        {allStatuses.map((s) => (
-          <Button
-            key={s}
-            variant="ghost"
-            size="sm"
-            className={cn("w-full justify-start gap-2 text-xs", s === status && "bg-accent")}
-            onClick={() => {
-              onChange(s);
-              setOpen(false);
-            }}
-          >
-            <StatusIcon status={s} />
-            {statusLabel(s)}
-          </Button>
-        ))}
-      </PopoverContent>
-    </Popover>
+    <Tooltip>
+      <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            {circle}
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <PopoverContent className="w-40 p-1" align="start">
+          {allStatuses.map((s) => (
+            <Button
+              key={s}
+              variant="ghost"
+              size="sm"
+              className={cn("w-full justify-start gap-2 text-xs", s === status && "bg-accent")}
+              onClick={() => {
+                onChange(s);
+                setPopoverOpen(false);
+              }}
+            >
+              <StatusIcon status={s} />
+              {statusLabel(s)}
+            </Button>
+          ))}
+        </PopoverContent>
+      </Popover>
+      {!popoverOpen && <TooltipContent side="top" className="text-xs">{statusLabel(status)}</TooltipContent>}
+    </Tooltip>
   );
 }
