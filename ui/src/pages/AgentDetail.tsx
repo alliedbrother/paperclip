@@ -8,13 +8,13 @@ import {
   type AgentPermissionUpdate,
 } from "../api/agents";
 import { companySkillsApi } from "../api/companySkills";
+import { issuesApi } from "../api/issues";
 import { budgetsApi } from "../api/budgets";
 import { heartbeatsApi } from "../api/heartbeats";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { ApiError } from "../api/client";
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
 import { activityApi } from "../api/activity";
-import { issuesApi } from "../api/issues";
 import { usePanel } from "../context/PanelContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useCompany } from "../context/CompanyContext";
@@ -235,7 +235,7 @@ function scrollToContainerBottom(container: ScrollContainer, behavior: ScrollBeh
   container.scrollTo({ top: container.scrollHeight, behavior });
 }
 
-type AgentDetailView = "dashboard" | "instructions" | "configuration" | "skills" | "runs" | "budget" | "issues" | "team";
+type AgentDetailView = "dashboard" | "instructions" | "configuration" | "skills" | "runs" | "budget" | "issues" | "team" | "approvals";
 
 function parseAgentDetailView(value: string | null): AgentDetailView {
   if (value === "instructions" || value === "prompts") return "instructions";
@@ -245,6 +245,7 @@ function parseAgentDetailView(value: string | null): AgentDetailView {
   if (value === "runs") return value;
   if (value === "issues") return "issues";
   if (value === "team") return "team";
+  if (value === "approvals") return "approvals";
   return "dashboard";
 }
 
@@ -685,6 +686,8 @@ export function AgentDetail() {
                   ? "issues"
                 : activeView === "team"
                   ? "team"
+                : activeView === "approvals"
+                  ? "approvals"
                 : agent?.adapterType === "human"
                   ? "issues"
                 : "dashboard";
@@ -812,6 +815,8 @@ export function AgentDetail() {
         crumbs.push({ label: "Budget" });
       } else if (activeView === "team") {
         crumbs.push({ label: "Team Managed" });
+      } else if (activeView === "approvals") {
+        crumbs.push({ label: "Change Approvals" });
       } else {
         crumbs.push({ label: "Dashboard" });
       }
@@ -968,6 +973,7 @@ export function AgentDetail() {
           <PageTabBar
             items={agent.adapterType === "human" ? [
               { value: "issues", label: "Issues" },
+              { value: "approvals", label: "Change Approvals" },
               { value: "dashboard", label: "Dashboard" },
               ...(isManager ? [{ value: "team", label: "Team Managed" }] : []),
             ] : [
@@ -1124,6 +1130,13 @@ export function AgentDetail() {
         </div>
       )}
 
+      {activeView === "approvals" && agent.adapterType === "human" && resolvedCompanyId && (
+        <ChangeApprovalsTab
+          agentId={agent.id}
+          companyId={resolvedCompanyId}
+        />
+      )}
+
       {activeView === "issues" && agent.adapterType === "human" && resolvedCompanyId && (
         <HumanIssuesTab
           agentId={agent.id}
@@ -1239,6 +1252,185 @@ function TeamTreeNode({
       )}
     </div>
   );
+}
+
+/* ---- Change Approvals Tab ---- */
+
+function ChangeApprovalsTab({ agentId, companyId }: { agentId: string; companyId: string }) {
+  const queryClient = useQueryClient();
+  const { pushToast } = useToast();
+  const [filter, setFilter] = useState<"pending" | "resolved" | "all">("pending");
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
+
+  const { data: allIssues, isLoading } = useQuery({
+    queryKey: [...queryKeys.issues.list(companyId), "change-approvals", agentId],
+    queryFn: () => issuesApi.list(companyId, { assigneeAgentId: agentId, includeRoutineExecutions: true }),
+    refetchInterval: 10_000,
+  });
+
+  const approvalIssues = useMemo(() => {
+    if (!allIssues) return [];
+    return allIssues.filter((i) => i.title.startsWith("Change Approval:"));
+  }, [allIssues]);
+
+  const filtered = useMemo(() => {
+    if (filter === "all") return approvalIssues;
+    if (filter === "pending") return approvalIssues.filter((i) => ["backlog", "todo", "in_progress"].includes(i.status));
+    return approvalIssues.filter((i) => ["done", "cancelled"].includes(i.status));
+  }, [approvalIssues, filter]);
+
+  const acceptMut = useMutation({
+    mutationFn: ({ targetAgentId, issueId }: { targetAgentId: string; issueId: string }) =>
+      agentsApi.acceptChangeApproval(targetAgentId, issueId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
+      pushToast({ title: "Change approved and applied", tone: "success" });
+    },
+    onError: (err: Error) => pushToast({ title: "Approval failed", body: err.message, tone: "error" }),
+  });
+
+  const rejectMut = useMutation({
+    mutationFn: ({ targetAgentId, issueId, reason }: { targetAgentId: string; issueId: string; reason?: string }) =>
+      agentsApi.rejectChangeApproval(targetAgentId, issueId, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
+      pushToast({ title: "Change rejected", tone: "success" });
+    },
+    onError: (err: Error) => pushToast({ title: "Rejection failed", body: err.message, tone: "error" }),
+  });
+
+  function parsePayload(description: string | null) {
+    if (!description) return null;
+    const match = description.match(/<!-- CHANGE_REQUEST_PAYLOAD\n([\s\S]*?)\n-->/);
+    if (!match?.[1]) return null;
+    try { return JSON.parse(match[1]) as { targetAgentId: string; changeType: string; changes: Record<string, unknown>; currentValues: Record<string, unknown>; requestedBy: { name: string } }; }
+    catch { return null; }
+  }
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  if (isLoading) return <PageSkeleton />;
+
+  return (
+    <div className="space-y-4 max-w-4xl">
+      <div className="flex items-center gap-2 flex-wrap">
+        {(["pending", "resolved", "all"] as const).map((f) => (
+          <Button key={f} variant={filter === f ? "default" : "outline"} size="sm" onClick={() => setFilter(f)}>
+            {f === "pending" ? "Pending" : f === "resolved" ? "Resolved" : "All"}
+          </Button>
+        ))}
+        <span className="text-xs text-muted-foreground ml-auto">
+          {filtered.length} request{filtered.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      {filtered.length === 0 && (
+        <div className="text-sm text-muted-foreground text-center py-8">
+          No {filter === "pending" ? "pending" : filter === "resolved" ? "resolved" : ""} change approval requests.
+        </div>
+      )}
+
+      {filtered.map((issue) => {
+        const payload = parsePayload(issue.description ?? null);
+        const isOpen = ["backlog", "todo", "in_progress"].includes(issue.status);
+        const expanded = expandedIds.has(issue.id);
+        const targetAgentId = payload?.targetAgentId ?? "";
+
+        return (
+          <div key={issue.id} className={cn("rounded-lg border p-4 space-y-3", isOpen ? "border-amber-500/30 bg-amber-500/5" : "border-border")}>
+            <button type="button" className="flex items-center justify-between w-full text-left" onClick={() => toggleExpand(issue.id)}>
+              <div className="flex items-center gap-2 min-w-0">
+                <ChevronRight className={cn("h-4 w-4 text-muted-foreground transition-transform shrink-0", expanded && "rotate-90")} />
+                <span className="font-mono text-xs text-muted-foreground shrink-0">{issue.identifier}</span>
+                <span className="font-medium text-sm truncate">{issue.title}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className={cn(
+                  "px-2 py-0.5 rounded text-[10px] font-medium",
+                  isOpen ? "bg-amber-500/15 text-amber-600 dark:text-amber-400" : issue.status === "done" ? "bg-green-500/15 text-green-600 dark:text-green-400" : "bg-neutral-500/10 text-neutral-500"
+                )}>
+                  {isOpen ? "Pending" : issue.status === "done" ? "Approved" : "Rejected"}
+                </span>
+              </div>
+            </button>
+
+            {expanded && payload && (
+              <div className="space-y-3 pt-2 border-t border-border/50">
+                <div className="text-xs text-muted-foreground">
+                  <span className="font-medium">Agent:</span> {issue.title.replace("Change Approval: ", "").split(" - ")[0]}
+                  {" · "}
+                  <span className="font-medium">Type:</span> {payload.changeType}
+                  {" · "}
+                  <span className="font-medium">By:</span> {payload.requestedBy?.name ?? "Unknown"}
+                </div>
+
+                <div className="rounded-md border border-border/50 bg-accent/30 p-3 space-y-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">Proposed Changes</span>
+                  {Object.entries(payload.changes).map(([key, proposed]) => {
+                    const current = payload.currentValues[key];
+                    return (
+                      <div key={key} className="text-xs">
+                        <span className="font-mono font-medium">{key}</span>
+                        <div className="flex gap-2 mt-0.5">
+                          <span className="text-red-500/80 line-through">{truncateValue(current)}</span>
+                          <span className="text-muted-foreground">→</span>
+                          <span className="text-green-500">{truncateValue(proposed)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {isOpen && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <Button
+                      size="sm"
+                      variant="default"
+                      className="bg-green-600 hover:bg-green-700 text-white"
+                      disabled={acceptMut.isPending || rejectMut.isPending}
+                      onClick={() => acceptMut.mutate({ targetAgentId, issueId: issue.id })}
+                    >
+                      Accept
+                    </Button>
+                    <div className="flex-1 flex items-center gap-2">
+                      <input
+                        className="flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-xs placeholder:text-muted-foreground/50 outline-none"
+                        placeholder="Rejection reason (optional)"
+                        value={rejectReasons[issue.id] ?? ""}
+                        onChange={(e) => setRejectReasons((r) => ({ ...r, [issue.id]: e.target.value }))}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={acceptMut.isPending || rejectMut.isPending}
+                        onClick={() => rejectMut.mutate({ targetAgentId, issueId: issue.id, reason: rejectReasons[issue.id] || undefined })}
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function truncateValue(val: unknown): string {
+  if (val === undefined || val === null) return "(not set)";
+  const s = typeof val === "string" ? val : JSON.stringify(val);
+  return s.length > 80 ? s.slice(0, 80) + "..." : s;
 }
 
 /* ---- Human Issues Tab ---- */

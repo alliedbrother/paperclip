@@ -18,6 +18,7 @@ import {
   logActivity,
 } from "../services/index.js";
 import { verticalBudgetService } from "../services/vertical-budget.js";
+import { changeApprovalService } from "../services/change-approval.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { fetchAllQuotaWindows } from "../services/quota-windows.js";
 import { badRequest } from "../errors.js";
@@ -300,6 +301,28 @@ export function costRoutes(db: Db) {
           res.status(403).json({ error: "Only self or VP Finance can change agent budgets" });
           return;
         }
+      }
+    }
+
+    // Change approval interceptor
+    {
+      const changeApproval = changeApprovalService(db);
+      const actor = { type: req.actor.type as "agent" | "board", agentId: req.actor.agentId ?? null, userId: req.actor.userId ?? null };
+      const check = await changeApproval.requiresApproval(agentId, actor);
+      if (check.needed) {
+        const actorInfo = getActorInfo(req);
+        const issue = await changeApproval.createChangeRequest({
+          targetAgentId: agent.id,
+          targetAgentName: agent.name,
+          companyId: agent.companyId,
+          changeType: "Budget",
+          patchRoute: "budget",
+          changes: { budgetMonthlyCents: req.body.budgetMonthlyCents },
+          currentValues: { budgetMonthlyCents: agent.budgetMonthlyCents },
+          requestedBy: { agentId: req.actor.agentId ?? null, userId: req.actor.userId ?? null, name: actorInfo.actorId ?? "Board User" },
+        });
+        res.status(202).json({ pendingApproval: true, issueId: issue.id, issueIdentifier: issue.identifier, message: `Change requires approval. Issue ${issue.identifier} created.` });
+        return;
       }
     }
 

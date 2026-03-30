@@ -185,6 +185,10 @@ export const agentsApi = {
     api.post<ClaudeLoginResult>(agentPath(id, companyId, "/claude-login"), {}),
   availableSkills: () =>
     api.get<{ skills: AvailableSkill[] }>("/skills/available"),
+  acceptChangeApproval: (agentId: string, issueId: string) =>
+    api.post<{ ok: true; agent: Agent }>(`/agents/${encodeURIComponent(agentId)}/change-approval/${encodeURIComponent(issueId)}/accept`, {}),
+  rejectChangeApproval: (agentId: string, issueId: string, reason?: string) =>
+    api.post<{ ok: true }>(`/agents/${encodeURIComponent(agentId)}/change-approval/${encodeURIComponent(issueId)}/reject`, { reason }),
 };
 
 export interface AvailableSkill {
