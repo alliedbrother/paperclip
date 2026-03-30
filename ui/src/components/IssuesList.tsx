@@ -774,17 +774,7 @@ export function IssuesList({
                   issueLinkState={issueLinkState}
                   desktopLeadingSpacer
                   mobileLeading={(
-                    <span
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                      }}
-                    >
-                      <StatusIcon
-                        status={issue.status}
-                        onChange={(s) => onUpdateIssue(issue.id, { status: s })}
-                      />
-                    </span>
+                    <StatusIcon status={issue.status} />
                   )}
                   desktopMetaLeading={(
                     <>
@@ -852,9 +842,7 @@ export function IssuesList({
                           )}
                         </span>
                       )}
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span>
+                      <Tooltip open={assigneePickerIssueId === issue.id ? false : undefined}>
                       <Popover
                         open={assigneePickerIssueId === issue.id}
                         onOpenChange={(open) => {
@@ -862,6 +850,7 @@ export function IssuesList({
                           if (!open) setAssigneeSearch("");
                         }}
                       >
+                        <TooltipTrigger asChild>
                         <PopoverTrigger asChild>
                           <button
                             className="flex w-[140px] shrink-0 items-center truncate rounded-md px-2 py-1 transition-colors hover:bg-accent/50"
@@ -900,6 +889,7 @@ export function IssuesList({
                             )}
                           </button>
                         </PopoverTrigger>
+                        </TooltipTrigger>
                         <PopoverContent
                           className="w-56 p-1"
                           align="end"
@@ -969,17 +959,13 @@ export function IssuesList({
                           </div>
                         </PopoverContent>
                       </Popover>
-                          </span>
-                        </TooltipTrigger>
-                        {assigneePickerIssueId !== issue.id && (
-                          <TooltipContent side="top" className="text-xs">
-                            {issue.assigneeAgentId && agentName(issue.assigneeAgentId)
-                              ? `${agentName(issue.assigneeAgentId)} (${agents?.find((a) => a.id === issue.assigneeAgentId)?.adapterType === "human" ? "Human" : "AI"})`
-                              : issue.assigneeUserId
-                                ? "Human user"
-                                : "Unassigned"}
-                          </TooltipContent>
-                        )}
+                        <TooltipContent side="top" className="text-xs">
+                          {issue.assigneeAgentId && agentName(issue.assigneeAgentId)
+                            ? `${agentName(issue.assigneeAgentId)} (${agents?.find((a) => a.id === issue.assigneeAgentId)?.adapterType === "human" ? "Human" : "AI"})`
+                            : issue.assigneeUserId
+                              ? "Human user"
+                              : "Unassigned"}
+                        </TooltipContent>
                       </Tooltip>
                     </>
                   )}
