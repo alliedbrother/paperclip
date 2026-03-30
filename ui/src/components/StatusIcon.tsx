@@ -2,6 +2,7 @@ import { useState } from "react";
 import { cn } from "../lib/utils";
 import { issueStatusIcon, issueStatusIconDefault } from "../lib/status-colors";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 
 const allStatuses = ["backlog", "todo", "in_progress", "in_review", "done", "cancelled", "blocked"];
@@ -30,7 +31,6 @@ export function StatusIcon({ status, onChange, className, showLabel }: StatusIco
         onChange && !showLabel && "cursor-pointer",
         className
       )}
-      title={statusLabel(status)}
     >
       {isDone && (
         <span className="absolute inset-0 m-auto h-2 w-2 rounded-full bg-current" />
@@ -38,14 +38,31 @@ export function StatusIcon({ status, onChange, className, showLabel }: StatusIco
     </span>
   );
 
-  if (!onChange) return showLabel ? <span className="inline-flex items-center gap-1.5">{circle}<span className="text-sm">{statusLabel(status)}</span></span> : circle;
+  // No onChange — just show circle with tooltip
+  if (!onChange) {
+    if (showLabel) {
+      return <span className="inline-flex items-center gap-1.5">{circle}<span className="text-sm">{statusLabel(status)}</span></span>;
+    }
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{circle}</TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">{statusLabel(status)}</TooltipContent>
+      </Tooltip>
+    );
+  }
 
+  // With onChange — wrap in Popover, but show tooltip when popover is closed
   const trigger = showLabel ? (
     <button className="inline-flex items-center gap-1.5 cursor-pointer hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 transition-colors">
       {circle}
       <span className="text-sm">{statusLabel(status)}</span>
     </button>
-  ) : circle;
+  ) : (
+    <Tooltip>
+      <TooltipTrigger asChild>{circle}</TooltipTrigger>
+      {!open && <TooltipContent side="top" className="text-xs">{statusLabel(status)}</TooltipContent>}
+    </Tooltip>
+  );
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

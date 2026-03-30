@@ -19,6 +19,7 @@ import { PageSkeleton } from "./PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight, List, Columns3, User, Search, Bot } from "lucide-react";
@@ -851,6 +852,9 @@ export function IssuesList({
                           )}
                         </span>
                       )}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span>
                       <Popover
                         open={assigneePickerIssueId === issue.id}
                         onOpenChange={(open) => {
@@ -861,7 +865,6 @@ export function IssuesList({
                         <PopoverTrigger asChild>
                           <button
                             className="flex w-[140px] shrink-0 items-center truncate rounded-md px-2 py-1 transition-colors hover:bg-accent/50"
-                            title={agentName(issue.assigneeAgentId) ?? undefined}
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
@@ -870,11 +873,11 @@ export function IssuesList({
                             {issue.assigneeAgentId && agentName(issue.assigneeAgentId) ? (
                               <span className="inline-flex items-center gap-1.5">
                                 {agents?.find((a) => a.id === issue.assigneeAgentId)?.adapterType === "human" ? (
-                                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500/15" title="Handled by Human">
+                                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500/15">
                                     <User className="h-3 w-3 text-sky-500" />
                                   </span>
                                 ) : (
-                                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-purple-500/15" title="Handled by AI">
+                                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-purple-500/15">
                                     <Bot className="h-3 w-3 text-purple-500" />
                                   </span>
                                 )}
@@ -966,6 +969,18 @@ export function IssuesList({
                           </div>
                         </PopoverContent>
                       </Popover>
+                          </span>
+                        </TooltipTrigger>
+                        {assigneePickerIssueId !== issue.id && (
+                          <TooltipContent side="top" className="text-xs">
+                            {issue.assigneeAgentId && agentName(issue.assigneeAgentId)
+                              ? `${agentName(issue.assigneeAgentId)} (${agents?.find((a) => a.id === issue.assigneeAgentId)?.adapterType === "human" ? "Human" : "AI"})`
+                              : issue.assigneeUserId
+                                ? "Human user"
+                                : "Unassigned"}
+                          </TooltipContent>
+                        )}
+                      </Tooltip>
                     </>
                   )}
                   trailingMeta={formatDate(issue.createdAt)}
