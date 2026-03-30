@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
-import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight, List, Columns3, User, Search } from "lucide-react";
+import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight, List, Columns3, User, Search, Bot } from "lucide-react";
 import { KanbanBoard } from "./KanbanBoard";
 import type { Issue } from "@paperclipai/shared";
 
@@ -42,6 +42,7 @@ export type IssueViewState = {
   assignees: string[];
   labels: string[];
   projects: string[];
+  creatorType: string[];
   sortField: "status" | "priority" | "title" | "created" | "updated";
   sortDir: "asc" | "desc";
   groupBy: "status" | "priority" | "assignee" | "none";
@@ -55,6 +56,7 @@ const defaultViewState: IssueViewState = {
   assignees: [],
   labels: [],
   projects: [],
+  creatorType: [],
   sortField: "updated",
   sortDir: "desc",
   groupBy: "none",
@@ -108,6 +110,14 @@ function applyFilters(issues: Issue[], state: IssueViewState, currentUserId?: st
   }
   if (state.labels.length > 0) result = result.filter((i) => (i.labelIds ?? []).some((id) => state.labels.includes(id)));
   if (state.projects.length > 0) result = result.filter((i) => i.projectId != null && state.projects.includes(i.projectId));
+  if (state.creatorType.length > 0) {
+    result = result.filter((issue) => {
+      const isAI = !!issue.createdByAgentId;
+      if (state.creatorType.includes("ai") && isAI) return true;
+      if (state.creatorType.includes("human") && !isAI) return true;
+      return false;
+    });
+  }
   return result;
 }
 
@@ -140,6 +150,7 @@ function countActiveFilters(state: IssueViewState): number {
   if (state.assignees.length > 0) count++;
   if (state.labels.length > 0) count++;
   if (state.projects.length > 0) count++;
+  if (state.creatorType.length > 0) count++;
   return count;
 }
 
@@ -381,7 +392,7 @@ export function IssuesList({
                     className="h-3 w-3 ml-1 hidden sm:block"
                     onClick={(e) => {
                       e.stopPropagation();
-                      updateView({ statuses: [], priorities: [], assignees: [], labels: [], projects: [] });
+                      updateView({ statuses: [], priorities: [], assignees: [], labels: [], projects: [], creatorType: [] });
                     }}
                   />
                 )}
@@ -394,7 +405,7 @@ export function IssuesList({
                   {activeFilterCount > 0 && (
                     <button
                       className="text-xs text-muted-foreground hover:text-foreground"
-                      onClick={() => updateView({ statuses: [], priorities: [], assignees: [], labels: [] })}
+                      onClick={() => updateView({ statuses: [], priorities: [], assignees: [], labels: [], creatorType: [] })}
                     >
                       Clear
                     </button>
@@ -531,6 +542,28 @@ export function IssuesList({
                         </div>
                       </div>
                     )}
+
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">Created by</span>
+                      <div className="space-y-0.5">
+                        <label className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
+                          <Checkbox
+                            checked={viewState.creatorType.includes("ai")}
+                            onCheckedChange={() => updateView({ creatorType: toggleInArray(viewState.creatorType, "ai") })}
+                          />
+                          <Bot className="h-3.5 w-3.5 text-purple-500" />
+                          <span className="text-sm">AI Agent</span>
+                        </label>
+                        <label className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
+                          <Checkbox
+                            checked={viewState.creatorType.includes("human")}
+                            onCheckedChange={() => updateView({ creatorType: toggleInArray(viewState.creatorType, "human") })}
+                          />
+                          <User className="h-3.5 w-3.5 text-blue-500" />
+                          <span className="text-sm">Human</span>
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -712,6 +745,17 @@ export function IssuesList({
                           <span className="hidden text-[11px] font-medium text-blue-600 dark:text-blue-400 sm:inline">
                             Live
                           </span>
+                        </span>
+                      )}
+                      {issue.createdByAgentId ? (
+                        <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-purple-500/10 px-1.5 py-0.5">
+                          <Bot className="h-2.5 w-2.5 text-purple-500" />
+                          <span className="text-[10px] font-medium text-purple-600 dark:text-purple-400">AI</span>
+                        </span>
+                      ) : (
+                        <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-sky-500/10 px-1.5 py-0.5">
+                          <User className="h-2.5 w-2.5 text-sky-500" />
+                          <span className="text-[10px] font-medium text-sky-600 dark:text-sky-400">Human</span>
                         </span>
                       )}
                     </>
