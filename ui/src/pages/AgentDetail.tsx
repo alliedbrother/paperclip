@@ -1371,21 +1371,9 @@ function ChangeApprovalsTab({ agentId, companyId }: { agentId: string; companyId
                   <span className="font-medium">By:</span> {payload.requestedBy?.name ?? "Unknown"}
                 </div>
 
-                <div className="rounded-md border border-border/50 bg-accent/30 p-3 space-y-1.5">
-                  <span className="text-xs font-medium text-muted-foreground">Proposed Changes</span>
-                  {Object.entries(payload.changes).map(([key, proposed]) => {
-                    const current = payload.currentValues[key];
-                    return (
-                      <div key={key} className="text-xs">
-                        <span className="font-mono font-medium">{key}</span>
-                        <div className="flex gap-2 mt-0.5">
-                          <span className="text-red-500/80 line-through">{truncateValue(current)}</span>
-                          <span className="text-muted-foreground">→</span>
-                          <span className="text-green-500">{truncateValue(proposed)}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="rounded-md border border-border/50 bg-accent/30 p-3 space-y-0.5">
+                  <span className="text-xs font-medium text-muted-foreground mb-2 block">Proposed Changes</span>
+                  <ChangesDiffView changes={payload.changes} currentValues={payload.currentValues} />
                 </div>
 
                 {isOpen && (
@@ -1427,10 +1415,90 @@ function ChangeApprovalsTab({ agentId, companyId }: { agentId: string; companyId
   );
 }
 
-function truncateValue(val: unknown): string {
-  if (val === undefined || val === null) return "(not set)";
-  const s = typeof val === "string" ? val : JSON.stringify(val);
-  return s.length > 80 ? s.slice(0, 80) + "..." : s;
+/** Deep-diff two objects, showing only changed leaf values with flattened key paths. */
+function ChangesDiffView({ changes, currentValues }: { changes: Record<string, unknown>; currentValues: Record<string, unknown> }) {
+  const diffs = useMemo(() => computeDiffs(changes, currentValues), [changes, currentValues]);
+
+  if (diffs.length === 0) return <span className="text-xs text-muted-foreground">No visible changes</span>;
+
+  return (
+    <div className="space-y-2">
+      {diffs.map((d, i) => (
+        <div key={i} className="rounded border border-border/30 bg-background/50 px-3 py-2">
+          <div className="font-mono text-[11px] font-medium text-foreground/80 mb-1">{d.path}</div>
+          {d.type === "added" && (
+            <div className="flex items-start gap-1.5">
+              <span className="text-[10px] font-medium text-green-500 bg-green-500/10 px-1 rounded shrink-0 mt-0.5">ADDED</span>
+              <pre className="text-xs text-green-400 whitespace-pre-wrap break-all">{d.newVal}</pre>
+            </div>
+          )}
+          {d.type === "removed" && (
+            <div className="flex items-start gap-1.5">
+              <span className="text-[10px] font-medium text-red-500 bg-red-500/10 px-1 rounded shrink-0 mt-0.5">REMOVED</span>
+              <pre className="text-xs text-red-400 whitespace-pre-wrap break-all line-through">{d.oldVal}</pre>
+            </div>
+          )}
+          {d.type === "changed" && (
+            <div className="space-y-1">
+              <div className="flex items-start gap-1.5">
+                <span className="text-[10px] font-medium text-red-500/70 bg-red-500/10 px-1 rounded shrink-0 mt-0.5">OLD</span>
+                <pre className="text-xs text-red-400/80 whitespace-pre-wrap break-all">{d.oldVal}</pre>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-[10px] font-medium text-green-500 bg-green-500/10 px-1 rounded shrink-0 mt-0.5">NEW</span>
+                <pre className="text-xs text-green-400 whitespace-pre-wrap break-all">{d.newVal}</pre>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+interface DiffEntry { path: string; type: "added" | "removed" | "changed"; oldVal?: string; newVal?: string }
+
+function computeDiffs(proposed: Record<string, unknown>, current: Record<string, unknown>): DiffEntry[] {
+  const result: DiffEntry[] = [];
+
+  function walk(propPath: string, newVal: unknown, oldVal: unknown) {
+    // Both are objects — recurse into sub-keys
+    if (isPlainObj(newVal) && isPlainObj(oldVal)) {
+      const allKeys = new Set([...Object.keys(newVal), ...Object.keys(oldVal)]);
+      for (const k of allKeys) {
+        const subPath = propPath ? `${propPath}.${k}` : k;
+        walk(subPath, (newVal as Record<string, unknown>)[k], (oldVal as Record<string, unknown>)[k]);
+      }
+      return;
+    }
+
+    const newStr = formatVal(newVal);
+    const oldStr = formatVal(oldVal);
+
+    if (oldVal === undefined && newVal !== undefined) {
+      result.push({ path: propPath, type: "added", newVal: newStr });
+    } else if (newVal === undefined && oldVal !== undefined) {
+      result.push({ path: propPath, type: "removed", oldVal: oldStr });
+    } else if (newStr !== oldStr) {
+      result.push({ path: propPath, type: "changed", oldVal: oldStr, newVal: newStr });
+    }
+  }
+
+  for (const key of Object.keys(proposed)) {
+    walk(key, proposed[key], current[key]);
+  }
+  return result;
+}
+
+function isPlainObj(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function formatVal(v: unknown): string {
+  if (v === undefined || v === null) return "(not set)";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  return JSON.stringify(v, null, 2);
 }
 
 /* ---- Human Issues Tab ---- */
