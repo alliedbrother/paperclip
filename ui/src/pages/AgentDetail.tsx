@@ -978,12 +978,12 @@ export function AgentDetail() {
               ...(isManager ? [{ value: "team", label: "Team Managed" }] : []),
             ] : [
               { value: "dashboard", label: "Dashboard" },
+              { value: "configuration", label: "Configuration" },
               { value: "instructions", label: "Instructions" },
               { value: "skills", label: "Skills" },
-              { value: "configuration", label: "Configuration" },
               { value: "runs", label: "Runs" },
-              { value: "budget", label: "Budget" },
               ...(isManager ? [{ value: "team", label: "Team Managed" }] : []),
+              { value: "budget", label: "Budget" },
             ]}
             value={activeView}
             onValueChange={(value) => navigate(`/agents/${canonicalAgentRef}/${value}`)}
