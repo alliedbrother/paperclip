@@ -8,6 +8,7 @@ import {
   type AgentPermissionUpdate,
 } from "../api/agents";
 import { companySkillsApi } from "../api/companySkills";
+import { projectsApi } from "../api/projects";
 import { issuesApi } from "../api/issues";
 import { budgetsApi } from "../api/budgets";
 import { heartbeatsApi } from "../api/heartbeats";
@@ -600,6 +601,12 @@ export function AgentDetail() {
     enabled: !!resolvedCompanyId,
   });
 
+  const { data: allProjects } = useQuery({
+    queryKey: queryKeys.projects.list(resolvedCompanyId!),
+    queryFn: () => projectsApi.list(resolvedCompanyId!),
+    enabled: !!resolvedCompanyId && needsDashboardData,
+  });
+
   const { data: budgetOverview } = useQuery({
     queryKey: queryKeys.budgets.overview(resolvedCompanyId ?? "__none__"),
     queryFn: () => budgetsApi.overview(resolvedCompanyId!),
@@ -1060,6 +1067,7 @@ export function AgentDetail() {
           agent={agent}
           runs={heartbeats ?? []}
           assignedIssues={assignedIssues}
+          projects={allProjects ?? []}
           runtimeState={runtimeState}
           agentId={agent.id}
           agentRouteId={canonicalAgentRef}
@@ -1954,19 +1962,59 @@ function AgentOverview({
   agent,
   runs,
   assignedIssues,
+  projects,
   runtimeState,
   agentId,
   agentRouteId,
 }: {
   agent: AgentDetailRecord;
   runs: HeartbeatRun[];
-  assignedIssues: { id: string; title: string; status: string; priority: string; identifier?: string | null; createdAt: Date }[];
+  assignedIssues: { id: string; title: string; status: string; priority: string; identifier?: string | null; createdAt: Date; projectId?: string | null }[];
+  projects: { id: string; name: string; status: string; color?: string | null; urlKey?: string }[];
   runtimeState?: AgentRuntimeState;
   agentId: string;
   agentRouteId: string;
 }) {
+  // Derive which projects this agent is involved in
+  const agentProjectIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const issue of assignedIssues) {
+      if (issue.projectId) ids.add(issue.projectId);
+    }
+    return ids;
+  }, [assignedIssues]);
+
+  const agentProjects = useMemo(() => {
+    return projects
+      .filter((p) => agentProjectIds.has(p.id) || (p as Record<string, unknown>).leadAgentId === agentId)
+      .filter((p) => p.status !== "cancelled");
+  }, [projects, agentProjectIds, agentId]);
+
   return (
     <div className="space-y-8">
+      {/* Projects */}
+      {agentProjects.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium">Projects</h3>
+          <div className="flex flex-wrap gap-2">
+            {agentProjects.map((project) => (
+              <Link
+                key={project.id}
+                to={`/projects/${project.urlKey ?? project.id}`}
+                className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-sm no-underline hover:bg-accent/50 transition-colors"
+              >
+                <span
+                  className="h-2.5 w-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: project.color ?? "#6b7280" }}
+                />
+                <span className="font-medium">{project.name}</span>
+                <StatusBadge status={project.status} />
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Latest Run */}
       <LatestRunCard runs={runs} agentId={agentRouteId} />
 
