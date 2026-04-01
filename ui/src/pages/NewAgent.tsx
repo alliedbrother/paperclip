@@ -72,6 +72,7 @@ export function NewAgent() {
   const [reportsTo, setReportsTo] = useState<string | null>(null);
   const [configValues, setConfigValues] = useState<CreateConfigValues>(defaultCreateValues);
   const [selectedSkillKeys, setSelectedSkillKeys] = useState<string[]>([]);
+  const [skillSearch, setSkillSearch] = useState("");
   const [roleOpen, setRoleOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -302,26 +303,44 @@ export function NewAgent() {
                 No optional company skills installed yet.
               </p>
             ) : (
-              <div className="space-y-3">
-                {availableSkills.map((skill) => {
-                  const inputId = `skill-${skill.id}`;
-                  const checked = selectedSkillKeys.includes(skill.key);
-                  return (
-                    <div key={skill.id} className="flex items-start gap-3">
-                      <Checkbox
-                        id={inputId}
-                        checked={checked}
-                        onCheckedChange={(next) => toggleSkill(skill.key, next === true)}
-                      />
-                      <label htmlFor={inputId} className="grid gap-1 leading-none">
-                        <span className="text-sm font-medium">{skill.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {skill.description ?? skill.key}
-                        </span>
-                      </label>
-                    </div>
-                  );
-                })}
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={skillSearch}
+                  onChange={(e) => setSkillSearch(e.target.value)}
+                  placeholder="Search skills..."
+                  className="w-full rounded-md border border-border/50 bg-accent/30 px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/50 outline-none"
+                />
+                {selectedSkillKeys.length > 0 && (
+                  <p className="text-[10px] text-muted-foreground">{selectedSkillKeys.length} selected</p>
+                )}
+                <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+                  {availableSkills
+                    .filter((skill) => {
+                      if (!skillSearch.trim()) return true;
+                      const q = skillSearch.toLowerCase();
+                      return skill.name.toLowerCase().includes(q) || (skill.description ?? "").toLowerCase().includes(q) || skill.key.toLowerCase().includes(q);
+                    })
+                    .map((skill) => {
+                      const inputId = `skill-${skill.id}`;
+                      const checked = selectedSkillKeys.includes(skill.key);
+                      return (
+                        <div key={skill.id} className="flex items-start gap-3">
+                          <Checkbox
+                            id={inputId}
+                            checked={checked}
+                            onCheckedChange={(next) => toggleSkill(skill.key, next === true)}
+                          />
+                          <label htmlFor={inputId} className="grid gap-1 leading-none">
+                            <span className="text-sm font-medium">{skill.name}</span>
+                            <span className="text-xs text-muted-foreground line-clamp-2">
+                              {skill.description ?? skill.key}
+                            </span>
+                          </label>
+                        </div>
+                      );
+                    })}
+                </div>
               </div>
             )}
           </div>
