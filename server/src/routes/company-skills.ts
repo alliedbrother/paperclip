@@ -8,6 +8,7 @@ import {
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { accessService, agentService, companySkillService, logActivity } from "../services/index.js";
+import { vetSkillContent } from "../services/skill-vetter.js";
 import { forbidden } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -154,6 +155,41 @@ export function companySkillRoutes(db: Db) {
       });
 
       res.json(result);
+    },
+  );
+
+  router.post(
+    "/companies/:companyId/skills/vet",
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      await assertCanMutateCompanySkills(req, companyId);
+      const source = String(req.body.source ?? "");
+      if (!source) {
+        res.status(400).json({ error: "source is required" });
+        return;
+      }
+
+      try {
+        // Use the same import flow to fetch skill content, but don't persist
+        const result = await svc.importFromSource(companyId, source);
+        if (result.imported.length === 0) {
+          res.json({ verdict: "warn", riskLevel: "low", summary: "No skills found at source.", patternFindings: [], llmAssessment: null });
+          return;
+        }
+
+        // Vet the first (primary) skill's markdown content
+        const skill = result.imported[0]!;
+        const vetResult = await vetSkillContent(skill.name, skill.markdown ?? "");
+
+        // Delete the imported skills since this is just a vet check
+        for (const imported of result.imported) {
+          await svc.deleteSkill(companyId, imported.id);
+        }
+
+        res.json({ ...vetResult, skillName: skill.name, skillCount: result.imported.length });
+      } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+      }
     },
   );
 

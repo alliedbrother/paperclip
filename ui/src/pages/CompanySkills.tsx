@@ -52,6 +52,11 @@ import {
   RefreshCw,
   Save,
   Search,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Loader2,
+  AlertTriangle,
 } from "lucide-react";
 
 type SkillTreeNode = {
@@ -743,6 +748,15 @@ export function CompanySkills() {
   const [source, setSource] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [emptySourceHelpOpen, setEmptySourceHelpOpen] = useState(false);
+  const [vetResult, setVetResult] = useState<{
+    verdict: "pass" | "warn" | "fail";
+    riskLevel: string;
+    patternFindings: { severity: string; description: string; matchedText?: string }[];
+    llmAssessment: string | null;
+    summary: string;
+    skillName?: string;
+    source: string;
+  } | null>(null);
   const [expandedSkillId, setExpandedSkillId] = useState<string | null>(null);
   const [expandedDirs, setExpandedDirs] = useState<Record<string, Set<string>>>({});
   const [viewMode, setViewMode] = useState<"preview" | "code">("preview");
@@ -872,6 +886,20 @@ export function CompanySkills() {
     },
   });
 
+  const vetSkill = useMutation({
+    mutationFn: (vetSource: string) => companySkillsApi.vetSkill(selectedCompanyId!, vetSource),
+    onSuccess: (result, vetSource) => {
+      setVetResult({ ...result, source: vetSource });
+    },
+    onError: (error) => {
+      pushToast({
+        tone: "error",
+        title: "Skill vetting failed",
+        body: error instanceof Error ? error.message : "Could not vet skill source.",
+      });
+    },
+  });
+
   const createSkill = useMutation({
     mutationFn: (payload: CompanySkillCreateRequest) => companySkillsApi.create(selectedCompanyId!, payload),
     onSuccess: async (skill) => {
@@ -997,11 +1025,121 @@ export function CompanySkills() {
       setEmptySourceHelpOpen(true);
       return;
     }
-    importSkill.mutate(trimmedSource);
+    vetSkill.mutate(trimmedSource);
+  }
+
+  function handleAcceptVettedSkill() {
+    if (!vetResult) return;
+    importSkill.mutate(vetResult.source);
+    setVetResult(null);
+  }
+
+  function handleDeclineVettedSkill() {
+    setVetResult(null);
+    pushToast({ tone: "info", title: "Skill not added", body: "The skill was declined after security review." });
   }
 
   return (
     <>
+      {/* Skill Vet Result Dialog */}
+      <Dialog open={vetResult !== null} onOpenChange={(open) => { if (!open) setVetResult(null); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {vetResult?.verdict === "pass" ? (
+                <ShieldCheck className="h-5 w-5 text-green-500" />
+              ) : vetResult?.verdict === "warn" ? (
+                <ShieldAlert className="h-5 w-5 text-amber-500" />
+              ) : (
+                <ShieldAlert className="h-5 w-5 text-red-500" />
+              )}
+              Security Assessment: {vetResult?.skillName ?? "Skill"}
+            </DialogTitle>
+            <DialogDescription>
+              {vetResult?.verdict === "pass"
+                ? "This skill passed security vetting."
+                : vetResult?.verdict === "warn"
+                  ? "This skill has potential concerns. Review before adding."
+                  : "This skill failed security vetting. Adding is not recommended."}
+            </DialogDescription>
+          </DialogHeader>
+          {vetResult && (
+            <div className="space-y-3 max-h-[50vh] overflow-y-auto">
+              <div className={cn(
+                "rounded-lg border px-3 py-2",
+                vetResult.verdict === "pass" ? "border-green-500/30 bg-green-500/5" :
+                vetResult.verdict === "warn" ? "border-amber-500/30 bg-amber-500/5" :
+                "border-red-500/30 bg-red-500/5"
+              )}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={cn(
+                    "text-xs font-bold uppercase",
+                    vetResult.verdict === "pass" ? "text-green-600 dark:text-green-400" :
+                    vetResult.verdict === "warn" ? "text-amber-600 dark:text-amber-400" :
+                    "text-red-600 dark:text-red-400"
+                  )}>
+                    {vetResult.verdict === "pass" ? "PASSED" : vetResult.verdict === "warn" ? "WARNING" : "FAILED"}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">Risk: {vetResult.riskLevel}</span>
+                </div>
+                <p className="text-sm">{vetResult.summary}</p>
+              </div>
+
+              {vetResult.patternFindings.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">Pattern Findings</span>
+                  {vetResult.patternFindings.map((f, i) => (
+                    <div key={i} className="flex items-start gap-2 rounded border border-border/50 px-2.5 py-1.5">
+                      <AlertTriangle className={cn(
+                        "h-3.5 w-3.5 shrink-0 mt-0.5",
+                        f.severity === "critical" ? "text-red-500" :
+                        f.severity === "high" ? "text-orange-500" :
+                        "text-amber-500"
+                      )} />
+                      <div>
+                        <span className="text-xs font-medium">{f.description}</span>
+                        {f.matchedText && (
+                          <pre className="text-[10px] text-muted-foreground mt-0.5 font-mono">{f.matchedText}</pre>
+                        )}
+                      </div>
+                      <span className={cn(
+                        "ml-auto shrink-0 rounded px-1 py-0.5 text-[9px] font-bold uppercase",
+                        f.severity === "critical" ? "bg-red-500/15 text-red-500" :
+                        f.severity === "high" ? "bg-orange-500/15 text-orange-500" :
+                        "bg-amber-500/15 text-amber-500"
+                      )}>{f.severity}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {vetResult.llmAssessment && (
+                <div className="space-y-1">
+                  <span className="text-xs font-medium text-muted-foreground">AI Assessment</span>
+                  <div className="rounded border border-border/50 px-3 py-2 text-xs whitespace-pre-wrap">
+                    {vetResult.llmAssessment}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={handleDeclineVettedSkill}>
+              Decline
+            </Button>
+            <Button
+              size="sm"
+              className={vetResult?.verdict === "fail" ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"}
+              onClick={handleAcceptVettedSkill}
+              disabled={importSkill.isPending}
+            >
+              {importSkill.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
+              {vetResult?.verdict === "fail" ? "Add Anyway (Not Recommended)" : "Add Skill"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={emptySourceHelpOpen} onOpenChange={setEmptySourceHelpOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -1091,9 +1229,21 @@ export function CompanySkills() {
                 size="sm"
                 variant="ghost"
                 onClick={handleAddSkillSource}
-                disabled={importSkill.isPending}
+                disabled={importSkill.isPending || vetSkill.isPending}
               >
-                {importSkill.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : "Add"}
+                {vetSkill.isPending ? (
+                  <span className="flex items-center gap-1.5">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span className="text-xs">Vetting...</span>
+                  </span>
+                ) : importSkill.isPending ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <span className="flex items-center gap-1">
+                    <Shield className="h-3.5 w-3.5" />
+                    Add
+                  </span>
+                )}
               </Button>
             </div>
             {scanStatusMessage && (
