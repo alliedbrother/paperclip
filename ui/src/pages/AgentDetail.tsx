@@ -2008,7 +2008,6 @@ function AgentOverview({
                   style={{ backgroundColor: project.color ?? "#6b7280" }}
                 />
                 <span className="font-medium">{project.name}</span>
-                <StatusBadge status={project.status} />
               </Link>
             ))}
           </div>
