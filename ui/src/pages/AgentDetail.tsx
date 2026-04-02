@@ -1538,6 +1538,10 @@ const issueStatusLabels: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
+function stripHtmlComments(text: string): string {
+  return text.replace(/<!--[\s\S]*?-->/g, "").trim();
+}
+
 function HumanIssuesTab({
   agentId,
   companyId,
@@ -1731,8 +1735,8 @@ function HumanIssuesTab({
               <div className="space-y-3 pl-7">
                 {/* Description */}
                 {issue.description && (
-                  <div className="text-xs text-muted-foreground whitespace-pre-wrap border-l-2 border-muted pl-3">
-                    {issue.description}
+                  <div className="text-xs text-muted-foreground border-l-2 border-muted pl-3 prose prose-xs dark:prose-invert max-w-none">
+                    <MarkdownBody>{stripHtmlComments(issue.description)}</MarkdownBody>
                   </div>
                 )}
 
