@@ -105,23 +105,59 @@ export function changeApprovalService(db: Db) {
   }
 
   /**
-   * Format a human-readable diff of changes.
+   * Format a human-readable diff of changes, deep-diffing nested objects
+   * and redacting sensitive values.
    */
   function formatChangeSummary(
     changes: Record<string, unknown>,
     currentValues: Record<string, unknown>,
   ): string {
-    const lines: string[] = [];
-    for (const key of Object.keys(changes)) {
-      const current = currentValues[key];
-      const proposed = changes[key];
-      const currentStr = current === undefined ? "(not set)" : JSON.stringify(current);
-      const proposedStr = JSON.stringify(proposed);
-      if (currentStr !== proposedStr) {
-        lines.push(`- **${key}**: ${truncate(currentStr, 100)} → ${truncate(proposedStr, 100)}`);
+    const diffs: string[] = [];
+
+    function walk(path: string, newVal: unknown, oldVal: unknown) {
+      if (isObj(newVal) && isObj(oldVal)) {
+        const allKeys = new Set([...Object.keys(newVal), ...Object.keys(oldVal)]);
+        for (const k of allKeys) {
+          walk(path ? `${path}.${k}` : k, (newVal as Record<string, unknown>)[k], (oldVal as Record<string, unknown>)[k]);
+        }
+        return;
+      }
+      const newStr = redactSensitive(path, fmtLeaf(newVal));
+      const oldStr = redactSensitive(path, fmtLeaf(oldVal));
+      if (newStr === oldStr) return;
+
+      if (oldVal === undefined) {
+        diffs.push(`- **${path}**: _(added)_ → \`${truncate(newStr, 60)}\``);
+      } else if (newVal === undefined) {
+        diffs.push(`- **${path}**: \`${truncate(oldStr, 60)}\` → _(removed)_`);
+      } else {
+        diffs.push(`- **${path}**: \`${truncate(oldStr, 60)}\` → \`${truncate(newStr, 60)}\``);
       }
     }
-    return lines.length > 0 ? lines.join("\n") : "- (no visible field changes)";
+
+    for (const key of Object.keys(changes)) {
+      walk(key, changes[key], currentValues[key]);
+    }
+    return diffs.length > 0 ? diffs.join("\n") : "- (no visible field changes)";
+  }
+
+  function isObj(v: unknown): v is Record<string, unknown> {
+    return typeof v === "object" && v !== null && !Array.isArray(v);
+  }
+
+  function fmtLeaf(v: unknown): string {
+    if (v === undefined || v === null) return "(not set)";
+    if (typeof v === "string") return v;
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
+    return JSON.stringify(v);
+  }
+
+  const SENSITIVE_KEYS = /api[_-]?key|secret|token|password|credential/i;
+  function redactSensitive(path: string, value: string): string {
+    if (SENSITIVE_KEYS.test(path) && value.length > 8) {
+      return value.slice(0, 8) + "****";
+    }
+    return value;
   }
 
   /**
@@ -170,16 +206,18 @@ export function changeApprovalService(db: Db) {
     const diffSummary = formatChangeSummary(changes, currentValues);
 
     const description = [
-      `<!-- CHANGE_REQUEST_PAYLOAD`,
-      payloadJson,
-      `-->`,
-      ``,
       `**Agent:** ${targetAgentName}`,
       `**Change Type:** ${changeType}`,
       `**Requested By:** ${requestedBy.name}`,
       ``,
       `### Proposed Changes`,
+      ``,
       diffSummary,
+      ``,
+      `---`,
+      `<!-- CHANGE_REQUEST_PAYLOAD`,
+      payloadJson,
+      `-->`,
     ].join("\n");
 
     const approver = await findNearestHumanApprover(targetAgentId);
