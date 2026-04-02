@@ -980,7 +980,7 @@ export function AgentDetail() {
           <PageTabBar
             items={agent.adapterType === "human" ? [
               { value: "issues", label: "Issues" },
-              { value: "approvals", label: "Change Approvals" },
+              { value: "approvals", label: "Approvals" },
               { value: "dashboard", label: "Dashboard" },
               ...(isManager ? [{ value: "team", label: "Team Managed" }] : []),
             ] : [
