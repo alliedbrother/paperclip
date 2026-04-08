@@ -104,39 +104,56 @@ export function changeApprovalService(db: Db) {
     return "Configuration";
   }
 
+  /** UUID pattern for agent ID detection */
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const AGENT_REF_KEYS = /reportsTo|assignee|agentId|managerId/i;
+
   /**
-   * Format a human-readable diff of changes, deep-diffing nested objects
-   * and redacting sensitive values.
+   * Resolve a UUID to an agent name if the field looks like an agent reference.
    */
-  function formatChangeSummary(
+  async function resolveAgentName(path: string, value: string): Promise<string> {
+    if (!AGENT_REF_KEYS.test(path) || !UUID_RE.test(value)) return value;
+    const agent = await getById(value);
+    return agent ? `${agent.name} (${value.slice(0, 8)})` : value;
+  }
+
+  /**
+   * Format a human-readable diff of changes, deep-diffing nested objects,
+   * redacting sensitive values, and resolving agent IDs to names.
+   */
+  async function formatChangeSummary(
     changes: Record<string, unknown>,
     currentValues: Record<string, unknown>,
-  ): string {
+  ): Promise<string> {
     const diffs: string[] = [];
 
-    function walk(path: string, newVal: unknown, oldVal: unknown) {
+    async function walk(path: string, newVal: unknown, oldVal: unknown) {
       if (isObj(newVal) && isObj(oldVal)) {
         const allKeys = new Set([...Object.keys(newVal), ...Object.keys(oldVal)]);
         for (const k of allKeys) {
-          walk(path ? `${path}.${k}` : k, (newVal as Record<string, unknown>)[k], (oldVal as Record<string, unknown>)[k]);
+          await walk(path ? `${path}.${k}` : k, (newVal as Record<string, unknown>)[k], (oldVal as Record<string, unknown>)[k]);
         }
         return;
       }
-      const newStr = redactSensitive(path, fmtLeaf(newVal));
-      const oldStr = redactSensitive(path, fmtLeaf(oldVal));
+      let newStr = redactSensitive(path, fmtLeaf(newVal));
+      let oldStr = redactSensitive(path, fmtLeaf(oldVal));
       if (newStr === oldStr) return;
 
+      // Resolve agent UUIDs to names
+      newStr = await resolveAgentName(path, newStr);
+      oldStr = await resolveAgentName(path, oldStr);
+
       if (oldVal === undefined) {
-        diffs.push(`- **${path}**: _(added)_ → \`${truncate(newStr, 60)}\``);
+        diffs.push(`- **${path}**: _(added)_ → ${truncate(newStr, 80)}`);
       } else if (newVal === undefined) {
-        diffs.push(`- **${path}**: \`${truncate(oldStr, 60)}\` → _(removed)_`);
+        diffs.push(`- **${path}**: ${truncate(oldStr, 80)} → _(removed)_`);
       } else {
-        diffs.push(`- **${path}**: \`${truncate(oldStr, 60)}\` → \`${truncate(newStr, 60)}\``);
+        diffs.push(`- **${path}**: ${truncate(oldStr, 80)} → ${truncate(newStr, 80)}`);
       }
     }
 
     for (const key of Object.keys(changes)) {
-      walk(key, changes[key], currentValues[key]);
+      await walk(key, changes[key], currentValues[key]);
     }
     return diffs.length > 0 ? diffs.join("\n") : "- (no visible field changes)";
   }
@@ -203,12 +220,21 @@ export function changeApprovalService(db: Db) {
     };
 
     const payloadJson = JSON.stringify(payload);
-    const diffSummary = formatChangeSummary(changes, currentValues);
+    const diffSummary = await formatChangeSummary(changes, currentValues);
+
+    // Resolve requester name: if it's an agent ID, look up the name
+    let requesterDisplay = requestedBy.name;
+    if (requestedBy.agentId) {
+      const requesterAgent = await getById(requestedBy.agentId);
+      if (requesterAgent) requesterDisplay = requesterAgent.name;
+    } else if (requesterDisplay === "local-board" || requesterDisplay === "board") {
+      requesterDisplay = "Board User";
+    }
 
     const description = [
       `**Agent:** ${targetAgentName}`,
       `**Change Type:** ${changeType}`,
-      `**Requested By:** ${requestedBy.name}`,
+      `**Requested By:** ${requesterDisplay}`,
       ``,
       `### Proposed Changes`,
       ``,

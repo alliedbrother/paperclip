@@ -4570,8 +4570,13 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
         censorUsernameInLogs={censorUsernameInLogs}
       />
       {adapterInvokePayload && (
+        <Collapsible defaultOpen={false}>
         <div className="rounded-lg border border-border bg-background/60 p-3 space-y-2">
-          <div className="text-xs font-medium text-muted-foreground">Invocation</div>
+          <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-left">
+            <ChevronRight className="h-3 w-3 text-muted-foreground transition-transform [[data-state=open]_&]:rotate-90" />
+            <span className="text-xs font-medium text-muted-foreground">Invocation</span>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
           {typeof adapterInvokePayload.adapterType === "string" && (
             <div className="text-xs"><span className="text-muted-foreground">Adapter: </span>{adapterInvokePayload.adapterType}</div>
           )}
@@ -4631,7 +4636,9 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
               </pre>
             </div>
           )}
+          </CollapsibleContent>
         </div>
+        </Collapsible>
       )}
 
       <div className="flex items-center justify-between">
