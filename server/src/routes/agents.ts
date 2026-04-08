@@ -1679,6 +1679,31 @@ export function agentRoutes(db: Db) {
     }
     await assertCanManageInstructionsPath(req, existing);
 
+    // Change approval interceptor — instructions file content writes
+    {
+      const actor = { type: req.actor.type as "agent" | "board", agentId: req.actor.agentId ?? null, userId: req.actor.userId ?? null };
+      const check = await changeApproval.requiresApproval(existing.id, actor);
+      if (check.needed) {
+        if (!check.approverId) {
+          res.status(403).json({ error: "Change requires human approval but no human agent is configured." });
+          return;
+        }
+        const actorInfo = getActorInfo(req);
+        const issue = await changeApproval.createChangeRequest({
+          targetAgentId: existing.id,
+          targetAgentName: existing.name,
+          companyId: existing.companyId,
+          changeType: "Instructions",
+          patchRoute: "instructions-file",
+          changes: { path: req.body.path, contentPreview: (req.body.content as string).slice(0, 500) + "..." },
+          currentValues: {},
+          requestedBy: { agentId: req.actor.agentId ?? null, userId: req.actor.userId ?? null, name: actorInfo.actorId ?? "Board User" },
+        });
+        res.status(202).json({ pendingApproval: true, issueId: issue.id, issueIdentifier: issue.identifier, message: `Change requires approval. Issue ${issue.identifier} created.` });
+        return;
+      }
+    }
+
     const actor = getActorInfo(req);
     const result = await instructions.writeFile(existing, req.body.path, req.body.content, {
       clearLegacyPromptTemplate: req.body.clearLegacyPromptTemplate,

@@ -83,26 +83,18 @@ export function changeApprovalService(db: Db) {
     const approver = await findNearestHumanApprover(targetAgentId);
 
     if (!approver) {
-      // No human agents exist in the company — block changes from AI agents,
-      // allow board users (they ARE humans)
+      // No human agents exist — allow board users (they ARE humans),
+      // block AI agents
       if (actor.type === "board") {
         return { needed: false, approverId: null };
       }
-      // AI agent trying to make changes with no human to approve — block it
       logger.info(`Change blocked: no human approver found for agent ${targetAgentId}`);
       return { needed: true, approverId: null };
     }
 
-    // If the actor is a board user linked to the approving human agent, skip approval
-    if (actor.type === "board" && actor.userId && approver.linkedUserId === actor.userId) {
-      return { needed: false, approverId: approver.id };
-    }
-
-    // If the actor IS the approver agent (agent making changes to its own reports)
-    if (actor.type === "agent" && actor.agentId === approver.id) {
-      return { needed: false, approverId: approver.id };
-    }
-
+    // ALL changes require human approval — both board users and AI agents.
+    // This ensures thorough change management with full audit trail.
+    // The human approver reviews and accepts/rejects from the Approvals tab.
     return { needed: true, approverId: approver.id };
   }
 
