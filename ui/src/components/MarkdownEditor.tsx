@@ -568,7 +568,15 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       {mentionActive && filteredMentions.length > 0 && createPortal(
         <div
           className="fixed z-[9999] min-w-[180px] max-h-[200px] overflow-y-auto rounded-md border border-border bg-popover shadow-md"
-          style={{ top: mentionState.fixedTop + 4, left: mentionState.fixedLeft }}
+          style={(() => {
+            const dropdownHeight = Math.min(filteredMentions.length * 36, 200);
+            const spaceBelow = window.innerHeight - mentionState.fixedTop - 8;
+            const openAbove = spaceBelow < dropdownHeight;
+            return {
+              top: openAbove ? mentionState.fixedTop - dropdownHeight - 4 : mentionState.fixedTop + 4,
+              left: mentionState.fixedLeft,
+            };
+          })()}
         >
           {filteredMentions.map((option, i) => (
             <button
