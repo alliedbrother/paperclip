@@ -1767,6 +1767,10 @@ export function agentRoutes(db: Db) {
       const actor = { type: req.actor.type as "agent" | "board", agentId: req.actor.agentId ?? null, userId: req.actor.userId ?? null };
       const check = await changeApproval.requiresApproval(existing.id, actor);
       if (check.needed) {
+        if (!check.approverId) {
+          res.status(403).json({ error: "Change requires human approval but no human agent is configured. Contact an admin." });
+          return;
+        }
         const actorInfo = getActorInfo(req);
         const snapshot: Record<string, unknown> = {};
         for (const key of Object.keys(req.body as Record<string, unknown>)) {

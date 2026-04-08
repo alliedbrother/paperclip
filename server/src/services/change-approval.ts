@@ -83,7 +83,14 @@ export function changeApprovalService(db: Db) {
     const approver = await findNearestHumanApprover(targetAgentId);
 
     if (!approver) {
-      return { needed: false, approverId: null };
+      // No human agents exist in the company — block changes from AI agents,
+      // allow board users (they ARE humans)
+      if (actor.type === "board") {
+        return { needed: false, approverId: null };
+      }
+      // AI agent trying to make changes with no human to approve — block it
+      logger.info(`Change blocked: no human approver found for agent ${targetAgentId}`);
+      return { needed: true, approverId: null };
     }
 
     // If the actor is a board user linked to the approving human agent, skip approval
