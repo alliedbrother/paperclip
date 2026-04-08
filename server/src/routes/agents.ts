@@ -2423,6 +2423,66 @@ export function agentRoutes(db: Db) {
     }
   });
 
+  // ── Self-Evolution Proposal ──
+  router.post("/agents/:id/evolution-proposal", async (req, res) => {
+    const agentId = req.params.id as string;
+    const existing = await svc.getById(agentId);
+    if (!existing) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+
+    // Agents can only propose changes to themselves
+    if (req.actor.type === "agent" && req.actor.agentId !== agentId) {
+      res.status(403).json({ error: "Agents can only propose evolution changes to themselves" });
+      return;
+    }
+
+    const { category, reasoning, proposals, sourceReflections } = req.body as {
+      category?: string;
+      reasoning?: string;
+      proposals?: { type: string; filePath: string; operation: string; sectionHeader?: string; content: string }[];
+      sourceReflections?: string[];
+    };
+
+    if (!category || !reasoning || !proposals || proposals.length === 0) {
+      res.status(400).json({ error: "category, reasoning, and proposals are required" });
+      return;
+    }
+
+    try {
+      const actorInfo = getActorInfo(req);
+      const changeType = `Self-Evolution (${category})`;
+      const diffSummary = proposals.map((p) =>
+        `- **${p.filePath}** (${p.operation}): ${p.content.slice(0, 200)}${p.content.length > 200 ? "..." : ""}`
+      ).join("\n");
+
+      const issue = await changeApproval.createChangeRequest({
+        targetAgentId: existing.id,
+        targetAgentName: existing.name,
+        companyId: existing.companyId,
+        changeType,
+        patchRoute: "evolution",
+        changes: { category, reasoning, proposals, sourceReflections },
+        currentValues: {},
+        requestedBy: {
+          agentId: req.actor.agentId ?? null,
+          userId: req.actor.userId ?? null,
+          name: existing.name,
+        },
+      });
+
+      res.status(202).json({
+        pendingApproval: true,
+        issueId: issue.id,
+        issueIdentifier: issue.identifier,
+        message: `Evolution proposal submitted for approval. Issue ${issue.identifier} created.`,
+      });
+    } catch (err) {
+      res.status(400).json({ error: (err as Error).message });
+    }
+  });
+
   router.post("/agents/:id/change-approval/:issueId/reject", async (req, res) => {
     assertBoard(req);
     const issueId = req.params.issueId as string;

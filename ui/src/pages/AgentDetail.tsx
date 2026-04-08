@@ -1279,7 +1279,7 @@ function ChangeApprovalsTab({ agentId, companyId }: { agentId: string; companyId
 
   const approvalIssues = useMemo(() => {
     if (!allIssues) return [];
-    return allIssues.filter((i) => i.title.startsWith("Change Approval:"));
+    return allIssues.filter((i) => i.title.startsWith("Change Approval:") || i.title.startsWith("Self-Evolution:"));
   }, [allIssues]);
 
   const filtered = useMemo(() => {
