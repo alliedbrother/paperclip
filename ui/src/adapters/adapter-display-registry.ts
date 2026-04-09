@@ -14,6 +14,7 @@ import {
   Sparkles,
   Terminal,
   Cpu,
+  User,
 } from "lucide-react";
 import { OpenCodeLogoIcon } from "@/components/OpenCodeLogoIcon";
 import { HermesIcon } from "@/components/HermesIcon";
@@ -95,6 +96,11 @@ const adapterDisplayMap: Record<string, AdapterDisplayInfo> = {
     icon: Bot,
     comingSoon: true,
     disabledLabel: "Configure OpenClaw within the App",
+  },
+  human: {
+    label: "Human",
+    description: "Human proxy agent for org chart",
+    icon: User,
   },
   process: {
     label: "Process",

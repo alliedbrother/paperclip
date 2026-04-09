@@ -43,6 +43,7 @@ import {
   secretService,
   syncInstructionsBundleConfigFromFilePath,
   workspaceOperationService,
+  changeApprovalService,
 } from "../services/index.js";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { assertBoard, assertCompanyAccess, assertInstanceAdmin, getActorInfo } from "./authz.js";
@@ -104,6 +105,7 @@ export function agentRoutes(db: Db) {
   const companySkills = companySkillService(db);
   const workspaceOperations = workspaceOperationService(db);
   const instanceSettings = instanceSettingsService(db);
+  const changeApproval = changeApprovalService(db);
   const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
 
   async function getCurrentUserRedactionOptions() {
@@ -764,6 +766,7 @@ export function agentRoutes(db: Db) {
       name: String(node.name),
       role: String(node.role),
       status: String(node.status),
+      adapterType: String(node.adapterType ?? ""),
       reports,
     };
   }
@@ -1560,6 +1563,27 @@ export function agentRoutes(db: Db) {
       }
     }
 
+    // Change approval interceptor
+    {
+      const actor = { type: req.actor.type as "agent" | "board", agentId: req.actor.agentId ?? null, userId: req.actor.userId ?? null };
+      const check = await changeApproval.requiresApproval(existing.id, actor);
+      if (check.needed) {
+        const actorInfo = getActorInfo(req);
+        const issue = await changeApproval.createChangeRequest({
+          targetAgentId: existing.id,
+          targetAgentName: existing.name,
+          companyId: existing.companyId,
+          changeType: "Permissions",
+          patchRoute: "permissions",
+          changes: req.body as Record<string, unknown>,
+          currentValues: { permissions: existing.permissions },
+          requestedBy: { agentId: req.actor.agentId ?? null, userId: req.actor.userId ?? null, name: actorInfo.actorId ?? "Board User" },
+        });
+        res.status(202).json({ pendingApproval: true, issueId: issue.id, issueIdentifier: issue.identifier, message: `Change requires approval. Issue ${issue.identifier} created.` });
+        return;
+      }
+    }
+
     const agent = await svc.updatePermissions(id, req.body);
     if (!agent) {
       res.status(404).json({ error: "Agent not found" });
@@ -1606,6 +1630,27 @@ export function agentRoutes(db: Db) {
     }
 
     await assertCanManageInstructionsPath(req, existing);
+
+    // Change approval interceptor
+    {
+      const actor = { type: req.actor.type as "agent" | "board", agentId: req.actor.agentId ?? null, userId: req.actor.userId ?? null };
+      const check = await changeApproval.requiresApproval(existing.id, actor);
+      if (check.needed) {
+        const actorInfo = getActorInfo(req);
+        const issue = await changeApproval.createChangeRequest({
+          targetAgentId: existing.id,
+          targetAgentName: existing.name,
+          companyId: existing.companyId,
+          changeType: "Instructions",
+          patchRoute: "instructions-path",
+          changes: req.body as Record<string, unknown>,
+          currentValues: { adapterConfig: existing.adapterConfig },
+          requestedBy: { agentId: req.actor.agentId ?? null, userId: req.actor.userId ?? null, name: actorInfo.actorId ?? "Board User" },
+        });
+        res.status(202).json({ pendingApproval: true, issueId: issue.id, issueIdentifier: issue.identifier, message: `Change requires approval. Issue ${issue.identifier} created.` });
+        return;
+      }
+    }
 
     const existingAdapterConfig = asRecord(existing.adapterConfig) ?? {};
     const explicitKey = asNonEmptyString(req.body.adapterConfigKey);
@@ -1695,6 +1740,27 @@ export function agentRoutes(db: Db) {
     }
     await assertCanManageInstructionsPath(req, existing);
 
+    // Change approval interceptor
+    {
+      const actor = { type: req.actor.type as "agent" | "board", agentId: req.actor.agentId ?? null, userId: req.actor.userId ?? null };
+      const check = await changeApproval.requiresApproval(existing.id, actor);
+      if (check.needed) {
+        const actorInfo = getActorInfo(req);
+        const issue = await changeApproval.createChangeRequest({
+          targetAgentId: existing.id,
+          targetAgentName: existing.name,
+          companyId: existing.companyId,
+          changeType: "Instructions",
+          patchRoute: "instructions-bundle",
+          changes: req.body as Record<string, unknown>,
+          currentValues: { adapterConfig: existing.adapterConfig },
+          requestedBy: { agentId: req.actor.agentId ?? null, userId: req.actor.userId ?? null, name: actorInfo.actorId ?? "Board User" },
+        });
+        res.status(202).json({ pendingApproval: true, issueId: issue.id, issueIdentifier: issue.identifier, message: `Change requires approval. Issue ${issue.identifier} created.` });
+        return;
+      }
+    }
+
     const actor = getActorInfo(req);
     const { bundle, adapterConfig } = await instructions.updateBundle(existing, req.body);
     const normalizedAdapterConfig = await secretsSvc.normalizeAdapterConfigForPersistence(
@@ -1760,6 +1826,31 @@ export function agentRoutes(db: Db) {
       return;
     }
     await assertCanManageInstructionsPath(req, existing);
+
+    // Change approval interceptor — instructions file content writes
+    {
+      const actor = { type: req.actor.type as "agent" | "board", agentId: req.actor.agentId ?? null, userId: req.actor.userId ?? null };
+      const check = await changeApproval.requiresApproval(existing.id, actor);
+      if (check.needed) {
+        if (!check.approverId) {
+          res.status(403).json({ error: "Change requires human approval but no human agent is configured." });
+          return;
+        }
+        const actorInfo = getActorInfo(req);
+        const issue = await changeApproval.createChangeRequest({
+          targetAgentId: existing.id,
+          targetAgentName: existing.name,
+          companyId: existing.companyId,
+          changeType: "Instructions",
+          patchRoute: "instructions-file",
+          changes: { path: req.body.path, contentPreview: (req.body.content as string).slice(0, 500) + "..." },
+          currentValues: {},
+          requestedBy: { agentId: req.actor.agentId ?? null, userId: req.actor.userId ?? null, name: actorInfo.actorId ?? "Board User" },
+        });
+        res.status(202).json({ pendingApproval: true, issueId: issue.id, issueIdentifier: issue.identifier, message: `Change requires approval. Issue ${issue.identifier} created.` });
+        return;
+      }
+    }
 
     const actor = getActorInfo(req);
     const result = await instructions.writeFile(existing, req.body.path, req.body.content, {
@@ -1843,6 +1934,36 @@ export function agentRoutes(db: Db) {
       return;
     }
     await assertCanUpdateAgent(req, existing);
+
+    // Change approval interceptor
+    {
+      const actor = { type: req.actor.type as "agent" | "board", agentId: req.actor.agentId ?? null, userId: req.actor.userId ?? null };
+      const check = await changeApproval.requiresApproval(existing.id, actor);
+      if (check.needed) {
+        if (!check.approverId) {
+          res.status(403).json({ error: "Change requires human approval but no human agent is configured. Contact an admin." });
+          return;
+        }
+        const actorInfo = getActorInfo(req);
+        const snapshot: Record<string, unknown> = {};
+        for (const key of Object.keys(req.body as Record<string, unknown>)) {
+          snapshot[key] = (existing as Record<string, unknown>)[key];
+        }
+        const changeType = changeApproval.classifyChangeType(req.body as Record<string, unknown>, "config");
+        const issue = await changeApproval.createChangeRequest({
+          targetAgentId: existing.id,
+          targetAgentName: existing.name,
+          companyId: existing.companyId,
+          changeType,
+          patchRoute: "config",
+          changes: req.body as Record<string, unknown>,
+          currentValues: snapshot,
+          requestedBy: { agentId: req.actor.agentId ?? null, userId: req.actor.userId ?? null, name: actorInfo.actorId ?? "Board User" },
+        });
+        res.status(202).json({ pendingApproval: true, issueId: issue.id, issueIdentifier: issue.identifier, message: `Change requires approval. Issue ${issue.identifier} created.` });
+        return;
+      }
+    }
 
     if (hasOwn(req.body as object, "permissions")) {
       res.status(422).json({ error: "Use /api/agents/:id/permissions for permission changes" });
@@ -2467,6 +2588,101 @@ export function agentRoutes(db: Db) {
       agentName: agent.name,
       adapterType: agent.adapterType,
     });
+  });
+
+  // ── Change Approval Action Routes ──
+
+  router.post("/agents/:id/change-approval/:issueId/accept", async (req, res) => {
+    assertBoard(req);
+    const issueId = req.params.issueId as string;
+    try {
+      const result = await changeApproval.applyChange(issueId);
+      const actor = getActorInfo(req);
+      await logActivity(db, {
+        companyId: result.agent.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        action: "agent.change_approved",
+        entityType: "agent",
+        entityId: result.agent.id,
+        details: { issueId },
+      });
+      res.json({ ok: true, agent: result.agent });
+    } catch (err) {
+      res.status(400).json({ error: (err as Error).message });
+    }
+  });
+
+  // ── Self-Evolution Proposal ──
+  router.post("/agents/:id/evolution-proposal", async (req, res) => {
+    const agentId = req.params.id as string;
+    const existing = await svc.getById(agentId);
+    if (!existing) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+
+    // Agents can only propose changes to themselves
+    if (req.actor.type === "agent" && req.actor.agentId !== agentId) {
+      res.status(403).json({ error: "Agents can only propose evolution changes to themselves" });
+      return;
+    }
+
+    const { category, reasoning, proposals, sourceReflections } = req.body as {
+      category?: string;
+      reasoning?: string;
+      proposals?: { type: string; filePath: string; operation: string; sectionHeader?: string; content: string }[];
+      sourceReflections?: string[];
+    };
+
+    if (!category || !reasoning || !proposals || proposals.length === 0) {
+      res.status(400).json({ error: "category, reasoning, and proposals are required" });
+      return;
+    }
+
+    try {
+      const actorInfo = getActorInfo(req);
+      const changeType = `Self-Evolution (${category})`;
+      const diffSummary = proposals.map((p) =>
+        `- **${p.filePath}** (${p.operation}): ${p.content.slice(0, 200)}${p.content.length > 200 ? "..." : ""}`
+      ).join("\n");
+
+      const issue = await changeApproval.createChangeRequest({
+        targetAgentId: existing.id,
+        targetAgentName: existing.name,
+        companyId: existing.companyId,
+        changeType,
+        patchRoute: "evolution",
+        changes: { category, reasoning, proposals, sourceReflections },
+        currentValues: {},
+        requestedBy: {
+          agentId: req.actor.agentId ?? null,
+          userId: req.actor.userId ?? null,
+          name: existing.name,
+        },
+      });
+
+      res.status(202).json({
+        pendingApproval: true,
+        issueId: issue.id,
+        issueIdentifier: issue.identifier,
+        message: `Evolution proposal submitted for approval. Issue ${issue.identifier} created.`,
+      });
+    } catch (err) {
+      res.status(400).json({ error: (err as Error).message });
+    }
+  });
+
+  router.post("/agents/:id/change-approval/:issueId/reject", async (req, res) => {
+    assertBoard(req);
+    const issueId = req.params.issueId as string;
+    const { reason } = (req.body ?? {}) as { reason?: string };
+    try {
+      await changeApproval.rejectChange(issueId, reason);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: (err as Error).message });
+    }
   });
 
   return router;

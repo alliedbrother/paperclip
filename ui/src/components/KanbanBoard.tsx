@@ -17,6 +17,7 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import { Bot, User } from "lucide-react";
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { Identity } from "./Identity";
@@ -39,6 +40,7 @@ function statusLabel(status: string): string {
 interface Agent {
   id: string;
   name: string;
+  adapterType?: string;
 }
 
 interface KanbanBoardProps {
@@ -154,27 +156,47 @@ function KanbanCard({
           if (isDragging) e.preventDefault();
         }}
       >
-        <div className="flex items-start gap-1.5 mb-1.5">
+        <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
           <span className="text-xs text-muted-foreground font-mono shrink-0">
             {issue.identifier ?? issue.id.slice(0, 8)}
           </span>
+          {issue.createdByAgentId ? (
+            <span className="inline-flex items-center gap-0.5 rounded-full bg-purple-500/10 px-1 py-0.5">
+              <Bot className="h-2 w-2 text-purple-500" />
+              <span className="text-[9px] font-medium text-purple-600 dark:text-purple-400">AI</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-0.5 rounded-full bg-sky-500/10 px-1 py-0.5">
+              <User className="h-2 w-2 text-sky-500" />
+              <span className="text-[9px] font-medium text-sky-600 dark:text-sky-400">Human</span>
+            </span>
+          )}
           {isLive && (
-            <span className="relative flex h-2 w-2 shrink-0 mt-0.5">
+            <span className="relative flex h-2 w-2 shrink-0">
               <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
             </span>
           )}
         </div>
         <p className="text-sm leading-snug line-clamp-2 mb-2">{issue.title}</p>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <PriorityIcon priority={issue.priority} />
           {issue.assigneeAgentId && (() => {
             const name = agentName(issue.assigneeAgentId);
-            return name ? (
-              <Identity name={name} size="xs" />
-            ) : (
-              <span className="text-xs text-muted-foreground font-mono">
-                {issue.assigneeAgentId.slice(0, 8)}
+            const assignedAgent = agents?.find((a) => a.id === issue.assigneeAgentId);
+            const isHuman = assignedAgent?.adapterType === "human";
+            return (
+              <span className="inline-flex items-center gap-1">
+                <span className={`inline-flex h-3.5 w-3.5 items-center justify-center rounded-full ${isHuman ? "bg-sky-500/15" : "bg-purple-500/15"}`}>
+                  {isHuman ? <User className="h-2 w-2 text-sky-500" /> : <Bot className="h-2 w-2 text-purple-500" />}
+                </span>
+                {name ? (
+                  <Identity name={name} size="xs" />
+                ) : (
+                  <span className="text-xs text-muted-foreground font-mono">
+                    {issue.assigneeAgentId.slice(0, 8)}
+                  </span>
+                )}
               </span>
             );
           })()}

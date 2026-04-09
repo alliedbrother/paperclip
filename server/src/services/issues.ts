@@ -987,6 +987,7 @@ export function issueService(db: Db) {
       }
       if (!filters?.includeRoutineExecutions && !filters?.originKind && !filters?.originId) {
         conditions.push(ne(issues.originKind, "routine_execution"));
+        conditions.push(ne(issues.originKind, "change_approval"));
       }
       conditions.push(isNull(issues.hiddenAt));
 

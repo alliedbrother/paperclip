@@ -41,6 +41,19 @@ export const companySkillsApi = {
       `/companies/${encodeURIComponent(companyId)}/skills/import`,
       { source },
     ),
+  vetSkill: (companyId: string, source: string) =>
+    api.post<{
+      verdict: "pass" | "warn" | "fail";
+      riskLevel: "low" | "medium" | "high" | "critical";
+      patternFindings: { severity: string; pattern: string; description: string; matchedText?: string }[];
+      llmAssessment: string | null;
+      summary: string;
+      skillName?: string;
+      skillCount?: number;
+    }>(
+      `/companies/${encodeURIComponent(companyId)}/skills/vet`,
+      { source },
+    ),
   scanProjects: (companyId: string, payload: CompanySkillProjectScanRequest = {}) =>
     api.post<CompanySkillProjectScanResult>(
       `/companies/${encodeURIComponent(companyId)}/skills/scan-projects`,

@@ -9,6 +9,7 @@ import { openClawGatewayUIAdapter } from "./openclaw-gateway";
 import { hermesLocalUIAdapter } from "./hermes-local";
 import { processUIAdapter } from "./process";
 import { httpUIAdapter } from "./http";
+import { humanUIAdapter } from "./human";
 import { loadDynamicParser, invalidateDynamicParser } from "./dynamic-loader";
 import { SchemaConfigFields, buildSchemaAdapterConfig } from "./schema-config-fields";
 
@@ -57,6 +58,7 @@ function registerBuiltInUIAdapters() {
     openClawGatewayUIAdapter,
     processUIAdapter,
     httpUIAdapter,
+    humanUIAdapter,
   ]) {
     builtinTypes.add(adapter.type);
     builtinAdaptersByType.set(adapter.type, adapter);

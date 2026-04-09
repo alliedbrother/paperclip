@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
+import { displayPath } from "@/lib/display-path";
 import { Link } from "@/lib/router";
 import type { Issue } from "@paperclipai/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -521,7 +522,7 @@ export function IssueProperties({
             )}
             onClick={() => { trackRecentAssignee(a.id); onUpdate({ assigneeAgentId: a.id, assigneeUserId: null }); setAssigneeOpen(false); }}
           >
-            <AgentIcon icon={a.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
+            <AgentIcon icon={a.icon} adapterType={a.adapterType} className="shrink-0 h-3 w-3 text-muted-foreground" />
             {a.name}
           </button>
         ))}

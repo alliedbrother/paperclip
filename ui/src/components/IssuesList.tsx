@@ -35,9 +35,10 @@ import { PageSkeleton } from "./PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
-import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight, List, Columns3, User, Search } from "lucide-react";
+import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight, List, Columns3, User, Search, Bot } from "lucide-react";
 import { KanbanBoard } from "./KanbanBoard";
 import { buildIssueTree, countDescendants } from "../lib/issue-tree";
 import type { Issue, Project } from "@paperclipai/shared";
@@ -60,6 +61,8 @@ export type IssueViewState = {
   assignees: string[];
   labels: string[];
   projects: string[];
+  creatorType: string[];
+  assigneeType: string[];
   sortField: "status" | "priority" | "title" | "created" | "updated";
   sortDir: "asc" | "desc";
   groupBy: "status" | "priority" | "assignee" | "workspace" | "parent" | "none";
@@ -74,6 +77,8 @@ const defaultViewState: IssueViewState = {
   assignees: [],
   labels: [],
   projects: [],
+  creatorType: [],
+  assigneeType: [],
   sortField: "updated",
   sortDir: "desc",
   groupBy: "none",
@@ -111,7 +116,7 @@ function toggleInArray(arr: string[], value: string): string[] {
   return arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
 }
 
-function applyFilters(issues: Issue[], state: IssueViewState, currentUserId?: string | null): Issue[] {
+function applyFilters(issues: Issue[], state: IssueViewState, currentUserId?: string | null, agents?: Agent[]): Issue[] {
   let result = issues;
   if (state.statuses.length > 0) result = result.filter((i) => state.statuses.includes(i.status));
   if (state.priorities.length > 0) result = result.filter((i) => state.priorities.includes(i.priority));
@@ -127,6 +132,27 @@ function applyFilters(issues: Issue[], state: IssueViewState, currentUserId?: st
   }
   if (state.labels.length > 0) result = result.filter((i) => (i.labelIds ?? []).some((id) => state.labels.includes(id)));
   if (state.projects.length > 0) result = result.filter((i) => i.projectId != null && state.projects.includes(i.projectId));
+  if (state.creatorType.length > 0) {
+    result = result.filter((issue) => {
+      const isAI = !!issue.createdByAgentId;
+      if (state.creatorType.includes("ai") && isAI) return true;
+      if (state.creatorType.includes("human") && !isAI) return true;
+      return false;
+    });
+  }
+  if (state.assigneeType.length > 0 && agents) {
+    result = result.filter((issue) => {
+      if (!issue.assigneeAgentId && !issue.assigneeUserId) return false;
+      if (issue.assigneeUserId) {
+        return state.assigneeType.includes("human");
+      }
+      const assignedAgent = agents.find((a) => a.id === issue.assigneeAgentId);
+      const isHuman = assignedAgent?.adapterType === "human";
+      if (state.assigneeType.includes("human") && isHuman) return true;
+      if (state.assigneeType.includes("ai") && !isHuman) return true;
+      return false;
+    });
+  }
   return result;
 }
 
@@ -159,6 +185,8 @@ function countActiveFilters(state: IssueViewState): number {
   if (state.assignees.length > 0) count++;
   if (state.labels.length > 0) count++;
   if (state.projects.length > 0) count++;
+  if (state.creatorType.length > 0) count++;
+  if (state.assigneeType.length > 0) count++;
   return count;
 }
 
@@ -167,6 +195,7 @@ function countActiveFilters(state: IssueViewState): number {
 interface Agent {
   id: string;
   name: string;
+  adapterType?: string;
 }
 
 type ProjectOption = Pick<Project, "id" | "name"> & Partial<Pick<Project, "color" | "workspaces" | "executionWorkspacePolicy" | "primaryWorkspace">>;
@@ -423,7 +452,7 @@ export function IssuesList({
 
   const filtered = useMemo(() => {
     const sourceIssues = normalizedIssueSearch.length > 0 ? searchedIssues : issues;
-    const filteredByControls = applyFilters(sourceIssues, viewState, currentUserId);
+    const filteredByControls = applyFilters(sourceIssues, viewState, currentUserId, agents);
     return sortIssues(filteredByControls, viewState);
   }, [issues, searchedIssues, viewState, normalizedIssueSearch, currentUserId]);
 
@@ -552,6 +581,33 @@ export function IssuesList({
               onSearchChange?.(nextSearch);
             }}
           />
+          <div className="hidden sm:flex items-center gap-1.5">
+            <span className="text-[10px] text-muted-foreground/70 uppercase tracking-wide">Handled by</span>
+            <button
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors border",
+                viewState.assigneeType.includes("ai")
+                  ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30"
+                  : "text-muted-foreground border-border hover:bg-accent/50"
+              )}
+              onClick={() => updateView({ assigneeType: viewState.assigneeType.includes("ai") ? viewState.assigneeType.filter((t) => t !== "ai") : [...viewState.assigneeType, "ai"] })}
+            >
+              <Bot className="h-3.5 w-3.5" />
+              AI
+            </button>
+            <button
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors border",
+                viewState.assigneeType.includes("human")
+                  ? "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30"
+                  : "text-muted-foreground border-border hover:bg-accent/50"
+              )}
+              onClick={() => updateView({ assigneeType: viewState.assigneeType.includes("human") ? viewState.assigneeType.filter((t) => t !== "human") : [...viewState.assigneeType, "human"] })}
+            >
+              <User className="h-3.5 w-3.5" />
+              Human
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
@@ -595,7 +651,7 @@ export function IssuesList({
                     className="h-3 w-3 ml-1 hidden sm:block"
                     onClick={(e) => {
                       e.stopPropagation();
-                      updateView({ statuses: [], priorities: [], assignees: [], labels: [], projects: [] });
+                      updateView({ statuses: [], priorities: [], assignees: [], labels: [], projects: [], creatorType: [], assigneeType: [] });
                     }}
                   />
                 )}
@@ -608,7 +664,7 @@ export function IssuesList({
                   {activeFilterCount > 0 && (
                     <button
                       className="text-xs text-muted-foreground hover:text-foreground"
-                      onClick={() => updateView({ statuses: [], priorities: [], assignees: [], labels: [] })}
+                      onClick={() => updateView({ statuses: [], priorities: [], assignees: [], labels: [], creatorType: [], assigneeType: [] })}
                     >
                       Clear
                     </button>
@@ -745,6 +801,50 @@ export function IssuesList({
                         </div>
                       </div>
                     )}
+
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">Created by</span>
+                      <div className="space-y-0.5">
+                        <label className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
+                          <Checkbox
+                            checked={viewState.creatorType.includes("ai")}
+                            onCheckedChange={() => updateView({ creatorType: toggleInArray(viewState.creatorType, "ai") })}
+                          />
+                          <Bot className="h-3.5 w-3.5 text-purple-500" />
+                          <span className="text-sm">AI Agent</span>
+                        </label>
+                        <label className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
+                          <Checkbox
+                            checked={viewState.creatorType.includes("human")}
+                            onCheckedChange={() => updateView({ creatorType: toggleInArray(viewState.creatorType, "human") })}
+                          />
+                          <User className="h-3.5 w-3.5 text-blue-500" />
+                          <span className="text-sm">Human</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">Handled by</span>
+                      <div className="space-y-0.5">
+                        <label className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
+                          <Checkbox
+                            checked={viewState.assigneeType.includes("ai")}
+                            onCheckedChange={() => updateView({ assigneeType: toggleInArray(viewState.assigneeType, "ai") })}
+                          />
+                          <Bot className="h-3.5 w-3.5 text-purple-500" />
+                          <span className="text-sm">AI Agent</span>
+                        </label>
+                        <label className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
+                          <Checkbox
+                            checked={viewState.assigneeType.includes("human")}
+                            onCheckedChange={() => updateView({ assigneeType: toggleInArray(viewState.assigneeType, "human") })}
+                          />
+                          <User className="h-3.5 w-3.5 text-sky-500" />
+                          <span className="text-sm">Human</span>
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -948,6 +1048,17 @@ export function IssuesList({
                                 </span>
                               )}
                             />
+                            {issue.createdByAgentId ? (
+                              <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-purple-500/10 px-1.5 py-0.5">
+                                <Bot className="h-2.5 w-2.5 text-purple-500" />
+                                <span className="text-[10px] font-medium text-purple-600 dark:text-purple-400">AI</span>
+                              </span>
+                            ) : (
+                              <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-sky-500/10 px-1.5 py-0.5">
+                                <User className="h-2.5 w-2.5 text-sky-500" />
+                                <span className="text-[10px] font-medium text-sky-600 dark:text-sky-400">Human</span>
+                              </span>
+                            )}
                           </>
                         )}
                         mobileMeta={issueActivityText(issue).toLowerCase()}
@@ -981,7 +1092,18 @@ export function IssuesList({
                                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
                                     >
                                       {issue.assigneeAgentId && agentName(issue.assigneeAgentId) ? (
-                                        <Identity name={agentName(issue.assigneeAgentId)!} size="sm" />
+                                        <span className="inline-flex items-center gap-1.5">
+                                          {agents?.find((a) => a.id === issue.assigneeAgentId)?.adapterType === "human" ? (
+                                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500/15">
+                                              <User className="h-3 w-3 text-sky-500" />
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-purple-500/15">
+                                              <Bot className="h-3 w-3 text-purple-500" />
+                                            </span>
+                                          )}
+                                          <Identity name={agentName(issue.assigneeAgentId)!} size="sm" />
+                                        </span>
                                       ) : issue.assigneeUserId ? (
                                         <span className="inline-flex items-center gap-1.5 text-xs">
                                           <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-muted-foreground/35 bg-muted/30">

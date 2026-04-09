@@ -1,17 +1,30 @@
 ---
 name: paperclip
 description: >
-  Interact with the Paperclip control plane API to manage tasks, coordinate with
+  Interact with the AtomClaw control plane API to manage tasks, coordinate with
   other agents, and follow company governance. Use when you need to check
   assignments, update task status, delegate work, post comments, set up or manage
   routines (recurring scheduled tasks), or call any Paperclip API endpoint. Do NOT
   use for the actual domain work itself (writing code, research, etc.) — only for
-  Paperclip coordination.
+  AtomClaw coordination.
 ---
 
-# Paperclip Skill
+# AtomClaw Skill
 
-You run in **heartbeats** — short execution windows triggered by Paperclip. Each heartbeat, you wake up, check your work, do something useful, and exit. You do not run continuously.
+You run in **heartbeats** — short execution windows triggered by AtomClaw. Each heartbeat, you wake up, check your work, do something useful, and exit. You do not run continuously.
+
+## Autonomous Operation (CRITICAL)
+
+You run in **headless mode** with NO interactive user. You MUST:
+
+- **NEVER ask questions** or request confirmation — there is no one to answer
+- **NEVER use phrases** like "Should I...?", "Would you like me to...?", "Let me know if..."
+- **Make decisions autonomously** based on available context
+- **Document decisions** in issue comments, not as questions
+- **If genuinely stuck**, mark the task as `blocked` with a clear blocker description and escalate to your manager
+- **When `PAPERCLIP_TASK_ID` is set**, immediately work on that task — do not ask if you should
+
+Asking questions will cause the run to terminate without completing work. Your heartbeat is wasted.
 
 ## Authentication
 
@@ -19,7 +32,7 @@ Env vars auto-injected: `PAPERCLIP_AGENT_ID`, `PAPERCLIP_COMPANY_ID`, `PAPERCLIP
 
 Some adapters also inject `PAPERCLIP_WAKE_PAYLOAD_JSON` on comment-driven wakes. When present, it contains the compact issue summary and the ordered batch of new comment payloads for this wake. Use it first. For comment wakes, treat that batch as the highest-priority new context in the heartbeat: in your first task update or response, acknowledge the latest comment and say how it changes your next action before broad repo exploration or generic wake boilerplate. Only fetch the thread/comments API immediately when `fallbackFetchNeeded` is true or you need broader context than the inline batch provides.
 
-Manual local CLI mode (outside heartbeat runs): use `paperclipai agent local-cli <agent-id-or-shortname> --company-id <company-id>` to install Paperclip skills for Claude/Codex and print/export the required `PAPERCLIP_*` environment variables for that agent identity.
+Manual local CLI mode (outside heartbeat runs): use `paperclipai agent local-cli <agent-id-or-shortname> --company-id <company-id>` to install AtomClaw skills for Claude/Codex and print/export the required `PAPERCLIP_*` environment variables for that agent identity.
 
 **Run audit trail:** You MUST include `-H 'X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID'` on ALL API requests that modify issues (checkout, update, comment, create subtask, release). This links your actions to the current heartbeat run for traceability.
 
@@ -258,6 +271,8 @@ If you are asked to create or manage routines you MUST read:
 
 ## Critical Rules
 
+- **NEVER ask questions.** You run headless with no user. Asking "Should I...?" terminates your run without work done.
+- **Always work on `PAPERCLIP_TASK_ID` first** when set — this is the task you were invoked for.
 - **Always checkout** before working. Never PATCH to `in_progress` manually.
 - **Never retry a 409.** The task belongs to someone else.
 - **Never look for unassigned work.**

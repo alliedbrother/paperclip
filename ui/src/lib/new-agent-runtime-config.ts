@@ -3,14 +3,16 @@ import { defaultCreateValues } from "../components/agent-config-defaults";
 export function buildNewAgentRuntimeConfig(input?: {
   heartbeatEnabled?: boolean;
   intervalSec?: number;
+  isHuman?: boolean;
 }) {
+  const isHuman = input?.isHuman ?? false;
   return {
     heartbeat: {
-      enabled: input?.heartbeatEnabled ?? defaultCreateValues.heartbeatEnabled,
-      intervalSec: input?.intervalSec ?? defaultCreateValues.intervalSec,
-      wakeOnDemand: true,
+      enabled: isHuman ? false : (input?.heartbeatEnabled ?? defaultCreateValues.heartbeatEnabled),
+      intervalSec: isHuman ? 0 : (input?.intervalSec ?? defaultCreateValues.intervalSec),
+      wakeOnDemand: !isHuman,
       cooldownSec: 10,
-      maxConcurrentRuns: 1,
+      maxConcurrentRuns: isHuman ? 0 : 1,
     },
   };
 }

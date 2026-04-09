@@ -1,5 +1,6 @@
 import { redactHomePathUserSegments, redactTranscriptEntryPaths } from "@paperclipai/adapter-utils";
 import type { TranscriptEntry, StdoutLineParser, TranscriptParserSource } from "./types";
+import { displayText } from "@/lib/display-path";
 
 export type RunLogChunk = { ts: string; stream: "stdout" | "stderr" | "system"; chunk: string };
 type TranscriptBuildOptions = { censorUsernameInLogs?: boolean };
@@ -45,11 +46,11 @@ export function buildTranscript(
 
   for (const chunk of chunks) {
     if (chunk.stream === "stderr") {
-      entries.push({ kind: "stderr", ts: chunk.ts, text: redactHomePathUserSegments(chunk.chunk, redactionOptions) });
+      entries.push({ kind: "stderr", ts: chunk.ts, text: displayText(redactHomePathUserSegments(chunk.chunk, redactionOptions)) });
       continue;
     }
     if (chunk.stream === "system") {
-      entries.push({ kind: "system", ts: chunk.ts, text: redactHomePathUserSegments(chunk.chunk, redactionOptions) });
+      entries.push({ kind: "system", ts: chunk.ts, text: displayText(redactHomePathUserSegments(chunk.chunk, redactionOptions)) });
       continue;
     }
 

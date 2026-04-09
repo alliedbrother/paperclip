@@ -345,6 +345,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   // Mention state (ref kept in sync so callbacks always see the latest value)
   const [mentionState, setMentionState] = useState<MentionState | null>(null);
   const mentionStateRef = useRef<MentionState | null>(null);
+  const mentionSelectingRef = useRef(false); // guard: prevent checkMention from clearing state during selection
   const [mentionIndex, setMentionIndex] = useState(0);
   const mentionActive = mentionState !== null && (
     (mentionState.trigger === "mention" && Boolean(mentions?.length))
@@ -507,6 +508,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
 
   // Mention detection: listen for selection changes and input events
   const checkMention = useCallback(() => {
+    // Skip detection while a mention is being selected (prevents race with onMouseDown)
+    if (mentionSelectingRef.current) return;
     if (!containerRef.current || isSelectionInsideCodeLikeElement(containerRef.current)) {
       mentionStateRef.current = null;
       setMentionState(null);
@@ -863,7 +866,11 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
                 )}
                 onPointerDown={(e) => {
                   e.preventDefault(); // prevent blur
+                  e.stopPropagation();
+                  mentionSelectingRef.current = true;
                   selectMention(option);
+                  // Clear guard after a tick so checkMention resumes
+                  requestAnimationFrame(() => { mentionSelectingRef.current = false; });
                 }}
                 onMouseEnter={() => setMentionIndex(i)}
               >
