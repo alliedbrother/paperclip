@@ -1,7 +1,7 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "@/lib/router";
-import { Check, ChevronDown, ChevronRight, Layers, MoreHorizontal, Plus, Repeat } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Layers, MoreHorizontal, Plus, Repeat, Search } from "lucide-react";
 import { routinesApi } from "../api/routines";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
@@ -327,6 +327,7 @@ export function Routines() {
     ? `paperclip:routines-view:${selectedCompanyId}`
     : "paperclip:routines-view";
   const [routineViewState, setRoutineViewState] = useState<RoutineViewState>(() => getRoutineViewState(routineViewStateKey));
+  const [routineSearch, setRoutineSearch] = useState("");
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Routines" }]);
@@ -497,9 +498,22 @@ export function Routines() {
     }
     return ids;
   }, [liveRuns]);
+  const filteredRoutines = useMemo(() => {
+    const items = routines ?? [];
+    const query = routineSearch.trim().toLowerCase();
+    if (!query) return items;
+    return items.filter((routine) => {
+      if (routine.title.toLowerCase().includes(query)) return true;
+      if (routine.assigneeAgentId) {
+        const agent = agentById.get(routine.assigneeAgentId);
+        if (agent && agent.name.toLowerCase().includes(query)) return true;
+      }
+      return false;
+    });
+  }, [routines, routineSearch, agentById]);
   const routineGroups = useMemo(
-    () => buildRoutineGroups(routines ?? [], routineViewState.groupBy, projectById, agentById),
-    [agentById, projectById, routineViewState.groupBy, routines],
+    () => buildRoutineGroups(filteredRoutines, routineViewState.groupBy, projectById, agentById),
+    [agentById, projectById, routineViewState.groupBy, filteredRoutines],
   );
   const recentRunsIssueLinkState = useMemo(
     () =>
@@ -593,7 +607,9 @@ export function Routines() {
         <TabsContent value="routines" className="space-y-4">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">
-              {(routines ?? []).length} routine{(routines ?? []).length === 1 ? "" : "s"}
+              {routineSearch.trim()
+                ? `${filteredRoutines.length} of ${(routines ?? []).length} routine${(routines ?? []).length === 1 ? "" : "s"}`
+                : `${(routines ?? []).length} routine${(routines ?? []).length === 1 ? "" : "s"}`}
             </p>
             <Popover>
               <PopoverTrigger asChild>
@@ -625,6 +641,16 @@ export function Routines() {
                 </div>
               </PopoverContent>
             </Popover>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-md border border-border/50 bg-accent/30 px-2 py-1">
+            <Search className="h-3 w-3 text-muted-foreground/60 shrink-0" />
+            <input
+              type="text"
+              value={routineSearch}
+              onChange={(e) => setRoutineSearch(e.target.value)}
+              placeholder="Search routines..."
+              className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/50 outline-none min-w-0"
+            />
           </div>
         </TabsContent>
         <TabsContent value="runs">

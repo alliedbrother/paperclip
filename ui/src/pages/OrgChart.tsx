@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { AgentIcon } from "../components/AgentIconPicker";
-import { Download, Network, Upload, User } from "lucide-react";
+import { Download, Network, Search, Upload, User } from "lucide-react";
 import { AGENT_ROLE_LABELS, type Agent } from "@paperclipai/shared";
 
 // Layout constants
@@ -134,6 +134,7 @@ export function OrgChart() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
+  const [search, setSearch] = useState("");
 
   const { data: orgTree, isLoading } = useQuery({
     queryKey: queryKeys.org(selectedCompanyId!),
@@ -161,6 +162,25 @@ export function OrgChart() {
   const layout = useMemo(() => layoutForest(orgTree ?? []), [orgTree]);
   const allNodes = useMemo(() => flattenLayout(layout), [layout]);
   const edges = useMemo(() => collectEdges(layout), [layout]);
+
+  // Search: compute matching node IDs
+  const matchingIds = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return null; // null means "no active search"
+    const ids = new Set<string>();
+    for (const n of allNodes) {
+      const agent = agentMap.get(n.id);
+      if (
+        n.name.toLowerCase().includes(q) ||
+        n.role.toLowerCase().includes(q) ||
+        (agent?.title ?? "").toLowerCase().includes(q) ||
+        (agent?.capabilities ?? "").toLowerCase().includes(q)
+      ) {
+        ids.add(n.id);
+      }
+    }
+    return ids;
+  }, [search, allNodes, agentMap]);
 
   // Compute SVG bounds
   const bounds = useMemo(() => {
@@ -260,19 +280,31 @@ export function OrgChart() {
 
   return (
     <div className="flex flex-col h-full">
-    <div className="mb-2 flex items-center justify-start gap-2 shrink-0">
-      <Link to="/company/import">
-        <Button variant="outline" size="sm">
-          <Upload className="mr-1.5 h-3.5 w-3.5" />
-          Import company
-        </Button>
-      </Link>
-      <Link to="/company/export">
-        <Button variant="outline" size="sm">
-          <Download className="mr-1.5 h-3.5 w-3.5" />
-          Export company
-        </Button>
-      </Link>
+    <div className="mb-2 flex items-center justify-between gap-2 shrink-0">
+      <div className="flex items-center gap-2">
+        <Link to="/company/import">
+          <Button variant="outline" size="sm">
+            <Upload className="mr-1.5 h-3.5 w-3.5" />
+            Import company
+          </Button>
+        </Link>
+        <Link to="/company/export">
+          <Button variant="outline" size="sm">
+            <Download className="mr-1.5 h-3.5 w-3.5" />
+            Export company
+          </Button>
+        </Link>
+      </div>
+      <div className="relative">
+        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+        <input
+          type="text"
+          placeholder="Search agents..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-8 w-[180px] rounded-md border border-border/50 bg-accent/30 pl-7 pr-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        />
+      </div>
     </div>
     <div
       ref={containerRef}
@@ -381,12 +413,14 @@ export function OrgChart() {
         {allNodes.map((node) => {
           const agent = agentMap.get(node.id);
           const dotColor = statusDotColor[node.status] ?? defaultDotColor;
+          const isMatch = matchingIds === null || matchingIds.has(node.id);
+          const isDimmed = matchingIds !== null && !isMatch;
 
           return (
             <div
               key={node.id}
               data-org-card
-              className="absolute bg-card border border-border rounded-lg shadow-sm hover:shadow-md hover:border-foreground/20 transition-[box-shadow,border-color] duration-150 cursor-pointer select-none"
+              className={`absolute bg-card border rounded-lg shadow-sm hover:shadow-md hover:border-foreground/20 transition-[box-shadow,border-color,opacity,ring-color] duration-150 cursor-pointer select-none ${isDimmed ? "opacity-25 border-border" : isMatch && matchingIds !== null ? "border-primary ring-1 ring-primary/40" : "border-border"}`}
               style={{
                 left: node.x,
                 top: node.y,

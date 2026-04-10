@@ -18,13 +18,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { History } from "lucide-react";
+import { History, Search } from "lucide-react";
 import type { Agent } from "@paperclipai/shared";
 
 export function Activity() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Activity" }]);
@@ -89,10 +90,26 @@ export function Activity() {
     return <PageSkeleton variant="list" />;
   }
 
-  const filtered =
-    data && filter !== "all"
-      ? data.filter((e) => e.entityType === filter)
-      : data;
+  const filtered = useMemo(() => {
+    if (!data) return data;
+    let result = filter !== "all" ? data.filter((e) => e.entityType === filter) : data;
+    const q = search.trim().toLowerCase();
+    if (q) {
+      result = result.filter((e) => {
+        const entityName = entityNameMap.get(`${e.entityType}:${e.entityId}`) ?? "";
+        const entityTitle = entityTitleMap.get(`${e.entityType}:${e.entityId}`) ?? "";
+        const actorName = e.actorType === "agent" ? (agentMap.get(e.actorId)?.name ?? "") : "";
+        return (
+          e.action.toLowerCase().includes(q) ||
+          entityName.toLowerCase().includes(q) ||
+          entityTitle.toLowerCase().includes(q) ||
+          actorName.toLowerCase().includes(q) ||
+          e.entityType.toLowerCase().includes(q)
+        );
+      });
+    }
+    return result;
+  }, [data, filter, search, entityNameMap, entityTitleMap, agentMap]);
 
   const entityTypes = data
     ? [...new Set(data.map((e) => e.entityType))].sort()
@@ -100,7 +117,17 @@ export function Activity() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-2">
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Search activity..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-8 w-[180px] rounded-md border border-border/50 bg-accent/30 pl-7 pr-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
         <Select value={filter} onValueChange={setFilter}>
           <SelectTrigger className="w-[140px] h-8 text-xs">
             <SelectValue placeholder="Filter by type" />
